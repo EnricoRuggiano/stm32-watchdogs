@@ -43,10 +43,10 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C  // Memory address of IWDG_ST 
     output reg rst_iwdg        // IWDG reset signal
 );
 
-reg [IWDG_KR_SIZE - 1:0]  IWDG_KR,  IWDG_KR_next;     // IWDG Key Register. Write here byte words to control the IWDG.
-reg [IWDG_PR_SIZE - 1:0]  IWDG_PR,  IWDG_PR_next;     // IWDG Prescale Register. It changes the LSI clock frequency. Initially WRITE PROTECTED
-reg [IWDG_RLR_SIZE- 1:0]  IWDG_RLR, IWDG_RLR_next;    // IWDG Reload Register. It stores the watchdog timer countdown. Initially WRITE PROTECTED
-reg [IWDG_ST_SIZE - 1:0]  IWDG_ST,  IWDG_ST_next;     // IWDG Status Register. It sets its bit when a prescale is done or an IWDG reset signal is emitted.
+reg [IWDG_KR_SIZE - 1:0]  iwdg_kr,  iwdg_kr_next;     // IWDG Key Register. Write here byte words to control the IWDG.
+reg [IWDG_PR_SIZE - 1:0]  iwdg_pr,  iwdg_pr_next;     // IWDG Prescale Register. It changes the LSI clock frequency. Initially WRITE PROTECTED
+reg [IWDG_RLR_SIZE- 1:0]  iwdg_rlr, iwdg_rlr_next;    // IWDG Reload Register. It stores the watchdog timer countdown. Initially WRITE PROTECTED
+reg [IWDG_ST_SIZE - 1:0]  iwdg_st,  iwdg_st_next;     // IWDG Status Register. It sets its bit when a prescale is done or an IWDG reset signal is emitted.
 
 reg [1:0] s, ss_next;       // Moore state machine
 
@@ -64,29 +64,28 @@ begin
     if (rst_m2s)               
         begin
             s <= IDLE;
-            
-            IWDG_KR  <= 16'h0000;
-            IWDG_PR  <= 3'b000;
-            IWDG_RLR <= 12'hFFF;
-            IWDG_ST  <= 2'b00;
+            iwdg_kr  <= 16'h0000;
+            iwdg_pr  <= 3'b000;
+            iwdg_rlr <= 12'hFFF;
+            iwdg_st  <= 2'b00;
         end
     else 
         begin
             s <= ss_next;
-            IWDG_KR  <= IWDG_KR_next;
-            IWDG_PR  <= IWDG_PR_next;
-            IWDG_RLR <= IWDG_RLR_next;
-            IWDG_ST  <= IWDG_ST_next;
+            iwdg_kr  <= iwdg_kr_next;
+            iwdg_pr  <= iwdg_pr_next;
+            iwdg_rlr <= iwdg_rlr_next;
+            iwdg_st  <= iwdg_st_next;
         end
 end
 
 always @(*)
 begin
     ss_next = s;
-    IWDG_KR_next  = IWDG_KR;
-    IWDG_PR_next  = IWDG_PR;
-    IWDG_RLR_next = IWDG_RLR;
-    IWDG_ST_next  = IWDG_ST;
+    iwdg_kr_next  = iwdg_kr;
+    iwdg_pr_next  = iwdg_pr;
+    iwdg_rlr_next = iwdg_rlr;
+    iwdg_st_next  = iwdg_st;
     
     case (s)
         IDLE: 
@@ -98,10 +97,10 @@ begin
         READ:
             begin
                 case(adr_m2s)
-                    IWDG_KR_ADR:    dat_s2m = IWDG_KR_next;
-                    IWDG_PR_ADR:    dat_s2m = IWDG_PR_next;  
-                    IWDG_RLR_ADR:   dat_s2m = IWDG_RLR_next; 
-                    IWDG_ST_ADR:    dat_s2m = IWDG_ST_next;
+                    IWDG_KR_ADR:    dat_s2m = iwdg_kr_next;
+                    IWDG_PR_ADR:    dat_s2m = iwdg_pr_next;  
+                    IWDG_RLR_ADR:   dat_s2m = iwdg_rlr_next; 
+                    IWDG_ST_ADR:    dat_s2m = iwdg_st_next;
                 endcase
                 ack_s2m = cyc_m2s & stb_m2s;
                 ss_next <= IDLE;
@@ -109,22 +108,22 @@ begin
         WRITE:
             begin
                 case(adr_m2s)
-                    IWDG_KR_ADR:    IWDG_KR_next  = dat_m2s;
-                    IWDG_PR_ADR:    IWDG_PR_next  = dat_m2s;  
-                    IWDG_RLR_ADR:   IWDG_RLR_next = dat_m2s; 
-                    IWDG_ST_ADR:    IWDG_ST_next  = dat_m2s;
+                    IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s;
+                    IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s;  
+                    IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s; 
+                    IWDG_ST_ADR:    iwdg_st_next  = dat_m2s;
                 endcase
                 ack_s2m = cyc_m2s & stb_m2s;
-                if(IWDG_KR_next == START) 
+                if(iwdg_kr_next == START) 
                     ss_next <= COUNT;
                 else
                    ss_next <= IDLE;
             end
         COUNT:
             begin
-                 if(IWDG_RLR == 12'h000) rst_iwdg = 1;
+                 if(iwdg_rlr == 12'h000) rst_iwdg = 1;
                  else
-                    IWDG_RLR_next = IWDG_RLR - 12'h001; 
+                    iwdg_rlr_next = iwdg_rlr - 12'h001; 
             end     
         default: 
             ss_next = IDLE;        
@@ -137,6 +136,6 @@ end
 
 assign read_cyc  = (we_m2s == 0 && cyc_m2s == 1)? 1 : 0;
 assign write_cyc = (we_m2s == 1 && cyc_m2s == 1)? 1 : 0;
-assign count_cyc = (IWDG_KR_next == START)? 1 : 0;
+assign count_cyc = (iwdg_kr_next == START)? 1 : 0;
 
 endmodule

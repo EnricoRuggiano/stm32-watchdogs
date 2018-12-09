@@ -103,7 +103,7 @@ initial
         cyc_m2s = 0;    // must be 0 when rst is 1    
         stb_m2s = 0;    // must be 0 when rst is 1
                         
-        @(posedge clk_m2s);
+        repeat(2) @(posedge clk_m2s);
         rst_m2s <= 0;         
          
          // READ operation

@@ -16,6 +16,8 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C  // Memory address of IWDG_ST 
 
 )
 (
+    input clk_lsi, // LSI clock from a RC oscillator 
+    
     input clk_m2s, // Wishbone SYSCON module clock. The clock of the bus used to coordinate the activities on the interfaces
     input rst_m2s, // Wishbone SYSCON module reset signal. It forces the Wishbone interface to reset. ALL WISHBONE interfaces must have one.
     
@@ -40,7 +42,7 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C  // Memory address of IWDG_ST 
     
     output reg [31:0] dat_s2m,  // Wishbone interface binary array used to pass data to the bus.
     output reg ack_s2m,         // Wishbone interface signal used by the SLAVE to acknoledge a MASTER request. 
-    output reg rst_iwdg        // IWDG reset signal
+    output rst_iwdg        // IWDG reset signal
 );
 
 reg [IWDG_KR_SIZE - 1:0]  iwdg_kr,  iwdg_kr_next;     // IWDG Key Register. Write here byte words to control the IWDG.
@@ -49,15 +51,37 @@ reg [IWDG_RLR_SIZE- 1:0]  iwdg_rlr, iwdg_rlr_next;    // IWDG Reload Register. I
 reg [IWDG_ST_SIZE - 1:0]  iwdg_st,  iwdg_st_next;     // IWDG Status Register. It sets its bit when a prescale is done or an IWDG reset signal is emitted.
 
 reg [1:0] s, ss_next;       // Moore state machine
+reg [7:0] pr_counter, pr_counter_next;  // prescale divider
+reg [7:0] prescale, prescale_next;  // prescale divider
+reg rst_iwdg_tmp;
 
 wire read_cyc, write_cyc, count_cyc;
+
+localparam PR_0 = 3'b000;
+localparam PR_1 = 3'b001;
+localparam PR_2 = 3'b010;
+localparam PR_3 = 3'b011;
+localparam PR_4 = 3'b100;
+localparam PR_5 = 3'b101;
+localparam PR_6 = 3'b110;
+
+localparam PR_DIV_4 = 9'b0_0000_0100;
+localparam PR_DIV_8 = 9'b0_0000_1000;
+localparam PR_DIV_16 = 9'b0_0001_0000;
+localparam PR_DIV_32 = 9'b0_0010_0000;
+localparam PR_DIV_64 = 9'b0_0100_0000;
+localparam PR_DIV_128 = 9'b0_1000_0000;
+localparam PR_DIV_256 = 9'b1_0000_0000;
 
 localparam IDLE  = 2'b00;   // IDLE  state
 localparam READ  = 2'b01;   // READ  state
 localparam WRITE = 2'b10;   // WRITE state
 localparam COUNT = 2'b11;   // COUNTDOWN state
 
-localparam START = 16'hCCCC; // start countdown  IWDG_KR value
+localparam START_KEY  = 16'hCCCC; // start countdown  IWDG_KR value
+localparam RELOAD_KEY = 16'hAAAA; // 
+localparam ACCESS_KEY = 16'h5555; // 
+
 
 always @(posedge clk_m2s)
 begin
@@ -66,17 +90,51 @@ begin
             s <= IDLE;
             iwdg_kr  <= 16'h0000;
             iwdg_pr  <= 3'b000;
-            iwdg_rlr <= 12'hFFF;
             iwdg_st  <= 2'b00;
+            
+            iwdg_rlr_next <= 12'h001;//12'hFFF;
         end
     else 
         begin
             s <= ss_next;
             iwdg_kr  <= iwdg_kr_next;
             iwdg_pr  <= iwdg_pr_next;
-            iwdg_rlr <= iwdg_rlr_next;
             iwdg_st  <= iwdg_st_next;
         end
+end
+
+always @(posedge clk_lsi)
+begin
+    
+    if (rst_m2s) iwdg_rlr_next <= 12'h001;//12'hFFF;               
+    
+    prescale <= prescale_next;
+        
+    if(iwdg_kr_next == RELOAD_KEY)
+        begin
+            iwdg_rlr <= 12'hFFF;
+            pr_counter <=  pr_counter_next;                    
+        end
+    else
+        begin
+        rst_iwdg_tmp = 0;
+        pr_counter <= pr_counter_next;
+        iwdg_rlr <= iwdg_rlr_next;              
+        end
+end
+
+always @(pr_counter)
+begin
+    pr_counter_next = pr_counter;
+    iwdg_rlr_next = iwdg_rlr;
+
+    if(pr_counter_next == prescale)
+        begin
+             if( iwdg_rlr_next == 0) rst_iwdg_tmp = 1; 
+             else iwdg_rlr_next = iwdg_rlr - 1;
+             pr_counter_next = 0;
+        end
+    else pr_counter_next = pr_counter + 1;
 end
 
 always @(*)
@@ -84,9 +142,18 @@ begin
     ss_next = s;
     iwdg_kr_next  = iwdg_kr;
     iwdg_pr_next  = iwdg_pr;
-    iwdg_rlr_next = iwdg_rlr;
     iwdg_st_next  = iwdg_st;
-    
+
+    case (iwdg_pr) // TO_DO: default
+        PR_0: prescale_next = PR_DIV_4 - 1;
+        PR_1: prescale_next = PR_DIV_8 - 1;
+        PR_2: prescale_next = PR_DIV_16 - 1;
+        PR_3: prescale_next = PR_DIV_32 - 1;
+        PR_4: prescale_next = PR_DIV_64 - 1;
+        PR_5: prescale_next = PR_DIV_128 - 1;
+        PR_6: prescale_next = PR_DIV_256 - 1;
+    endcase
+       
     case (s)
         IDLE: 
             begin 
@@ -103,28 +170,25 @@ begin
                     IWDG_ST_ADR:    dat_s2m = iwdg_st_next;
                 endcase
                 ack_s2m = cyc_m2s & stb_m2s;
-                ss_next <= IDLE;
+                ss_next = IDLE;
             end 
         WRITE:
             begin
                 case(adr_m2s)
                     IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s;
                     IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s;  
-                    IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s; 
+                    IWDG_RLR_ADR:   ;//iwdg_rlr_next = dat_m2s; 
                     IWDG_ST_ADR:    iwdg_st_next  = dat_m2s;
                 endcase
+            
+                
+                if(iwdg_kr_next == START_KEY) pr_counter_next = 0;
+                //if(iwdg_kr_next == RELOAD_KEY) pr_counter_next = 0;
+                //if(iwdg_kr_next == START_KEY) pr_counter_next = 0;
+                
                 ack_s2m = cyc_m2s & stb_m2s;
-                if(iwdg_kr_next == START) 
-                    ss_next <= COUNT;
-                else
-                   ss_next <= IDLE;
+                ss_next = IDLE;
             end
-        COUNT:
-            begin
-                 if(iwdg_rlr == 12'h000) rst_iwdg = 1;
-                 else
-                    iwdg_rlr_next = iwdg_rlr - 12'h001; 
-            end     
         default: 
             ss_next = IDLE;        
     endcase
@@ -136,6 +200,8 @@ end
 
 assign read_cyc  = (we_m2s == 0 && cyc_m2s == 1)? 1 : 0;
 assign write_cyc = (we_m2s == 1 && cyc_m2s == 1)? 1 : 0;
-assign count_cyc = (iwdg_kr_next == START)? 1 : 0;
+//assign count_cyc = (iwdg_kr_next == START)? 1 : 0;
+
+assign  rst_iwdg = rst_iwdg_tmp;
 
 endmodule

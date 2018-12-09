@@ -3,8 +3,9 @@
 module tb_IWDG 
 #(
 
-localparam CLK_CYCLE = 5,
-localparam END_TEST = 40,
+localparam CLK_PERIOD = 10,
+localparam CLK_LSI_PERIOD = 20, // 31.25 us for 32kHz rc oscillator
+localparam END_TEST = 200,
 
 localparam GRL  = 1,  // Granularity of the data    
 
@@ -21,6 +22,7 @@ localparam IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C  // Memory address of IWDG_ST
 
 )();
 
+reg clk_lsi;
 reg clk_m2s; 
 reg rst_m2s;       
 
@@ -50,7 +52,8 @@ reg ack_s2m;         // Wishbone interface signal used by the SLAVE to acknoledg
 reg rst_iwdg;        // IWDG reset signal
 
 
-always #CLK_CYCLE clk_m2s = ~clk_m2s;   // clock generation
+always #(CLK_PERIOD / 2) clk_m2s = ~clk_m2s;   // clock generation
+always #(CLK_LSI_PERIOD / 2) clk_lsi = ~clk_lsi;   // clock generation
 
 IWDG   // IWDG instance
  #(
@@ -68,6 +71,7 @@ IWDG   // IWDG instance
     .IWDG_ST_ADR(IWDG_ST_ADR)  
 
 ) IWDG (
+    .clk_lsi(clk_lsi),
     .clk_m2s(clk_m2s), // Wishbone SYSCON module clock. The clock of the bus used to coordinate the activities on the interfaces
     .rst_m2s(rst_m2s), // Wishbone SYSCON module reset signal. It forces the Wishbone interface to reset. ALL WISHBONE interfaces must have one.
     
@@ -92,7 +96,8 @@ IWDG   // IWDG instance
 
 initial
     begin
-        clk_m2s <= 0; 
+        clk_m2s <= 0;
+        clk_lsi <= 0; 
         rst_m2s = 1;    
                 
         cyc_m2s = 0;    // must be 0 when rst is 1    
@@ -128,7 +133,43 @@ initial
         join   
         cyc_m2s <= 0;  
         stb_m2s <= 0;
-                            
+    
+        // WRITE operation 
+        @(posedge clk_m2s);
+        
+        adr_m2s <= IWDG_KR_ADR;
+        we_m2s  <= 1;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        dat_m2s <= 16'hAAAA;
+           
+        fork
+        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join   
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+ 
+         // Pause
+         repeat(2) @(posedge clk_m2s);
+         rst_m2s <= 0;         
+  
+ 
+         // WRITE operation 
+         @(posedge clk_m2s);
+         
+         adr_m2s <= IWDG_KR_ADR;
+         we_m2s  <= 1;
+         cyc_m2s <= 1;
+         stb_m2s <= 1;
+         dat_m2s <= 16'hCCCC;
+               
+        fork
+            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join   
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+    
+                                
     #END_TEST $finish;
     end
 endmodule

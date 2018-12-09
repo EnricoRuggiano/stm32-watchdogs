@@ -51,15 +51,19 @@ reg [IWDG_RLR_SIZE- 1:0]  iwdg_rlr, iwdg_rlr_next;    // IWDG Reload Register. I
 reg [IWDG_ST_SIZE - 1:0]  iwdg_st,  iwdg_st_next;     // IWDG Status Register. It sets its bit when a prescale is done or an IWDG reset signal is emitted.
 
 reg [1:0] s, ss_next;       // Moore state machine
+
 reg [IWDG_KR_SIZE - 1:0] t, tt_next;
+reg [IWDG_RLR_SIZE- 1:0] cnt_rlr, cnt_rlr_next;    
 
-reg [7:0] pr_cnt, pr_cnt_next;  // prescale divider
-reg [7:0] pr_thr, pr_thr_next;  // prescale divider
+reg sts_pr,  sts_pr_next;
+reg sts_rlr, sts_rlr_next;
 
+reg [7:0] cnt_pr, cnt_pr_next;  // prescale divider
+reg [7:0] thr_pr, thr_pr_next;  // prescale divider
 
 reg rst_iwdg_tmp;
 
-wire read_cyc, write_cyc, count_cyc;
+wire read_cyc, write_cyc;
 
 localparam PR_0 = 3'b000;
 localparam PR_1 = 3'b001;
@@ -80,10 +84,8 @@ localparam PR_DIV_256 =  9'b1_0000_0000 - 1;
 localparam IDLE  = 2'b00;   // IDLE  state
 localparam READ  = 2'b01;   // READ  state
 localparam WRITE = 2'b10;   // WRITE state
-localparam COUNT = 2'b11;   // COUNTDOWN state
 
-
-localparam IDLE_KEY = 16'h0000;
+localparam IDLE_KEY   = 16'h0000;
 localparam COUNT_KEY  = 16'hCCCC; // start countdown  IWDG_KR value
 localparam RELOAD_KEY = 16'hAAAA; // 
 localparam ACCESS_KEY = 16'h5555; // 
@@ -94,103 +96,94 @@ begin
         begin
             s <= IDLE;
             iwdg_kr  <= 16'h0000;
+            iwdg_rlr <= 12'hfff;
             iwdg_pr  <= 3'b000;
-            iwdg_st  <= 2'b00;
-            
-            // iwdg_rlr_next <= 12'h001;//12'hFFF;
+            iwdg_st  <= 2'b00;            
         end
     else 
         begin
             s <= ss_next;
             iwdg_kr  <= iwdg_kr_next;
+            iwdg_rlr <= cnt_rlr_next;
+//            iwdg_rlr <= iwdg_rlr_next;
             iwdg_pr  <= iwdg_pr_next;
-            iwdg_st  <= iwdg_st_next;
+            
+            iwdg_st[0]  <= sts_pr_next;
+            iwdg_st[1]  <= sts_rlr_next;
+
         end
 end
 
 always @(posedge clk_lsi)
-begin
-    
+begin    
     if (rst_m2s) 
         begin
-            t <= IDLE_KEY;
-            
-            iwdg_rlr <= 12'h001; //12'hFFF;
-            pr_thr   <= PR_DIV_4;
-            pr_cnt   <= PR_DIV_4;
+            t <= IDLE_KEY;       
+            cnt_rlr  <= 12'h001; //12'hFFF
+            cnt_pr   <= PR_DIV_4;
+            thr_pr   <= PR_DIV_4;
+            sts_rlr  <= 0;
+            sts_pr   <= 0;
         end
     else
         begin
-            t <= iwdg_kr;
-            
-            iwdg_rlr <= iwdg_rlr_next;
-            pr_thr   <= pr_thr_next;
-            pr_cnt   <= pr_cnt_next;      
+            t <= iwdg_kr;          
+            cnt_rlr  <= cnt_rlr_next;
+            cnt_pr   <= cnt_pr_next;
+            thr_pr   <= thr_pr_next;
+            sts_rlr  <= sts_rlr_next;
+            sts_pr   <= sts_pr_next;
         end
-        
-   /*     
-    if(iwdg_kr_next == RELOAD_KEY)
-        begin
-            iwdg_rlr <= 12'hFFF;
-            pr_counter <=  pr_counter_next;                    
-        end
-    else
-        begin
-        rst_iwdg_tmp = 0;
-        end*/
 end
-/*
-always @(pr_counter)
-begin
-    pr_counter_next = pr_counter;
-    iwdg_rlr_next = iwdg_rlr;
-
-    if(pr_counter_next == prescale)
-        begin
-             if( iwdg_rlr_next == 0) rst_iwdg_tmp = 1; 
-             else iwdg_rlr_next = iwdg_rlr - 1;
-             pr_counter_next = 0;
-        end
-    else pr_counter_next = pr_counter + 1;
-end
-*/
 
 always @(*)
 begin
-    tt_next = iwdg_kr_next;
-    
-    iwdg_rlr_next = iwdg_rlr;
-    pr_thr_next   = pr_thr;
-    pr_cnt_next   = pr_cnt;
-    
-    /*case (iwdg_kr_next)
-        IDLE_KEY:   tt_next = IDLE_KEY; 
-        COUNT_KEY:  tt_next = COUNT_KEY; 
-        RELOAD_KEY: tt_next = RELOAD_KEY; 
-        ACCESS_KEY: tt_next = ACCESS_KEY; 
-    endcase    */
-    
+    tt_next = iwdg_kr_next;    
+    cnt_rlr_next  = cnt_rlr;
+    cnt_pr_next   = cnt_pr;
+    thr_pr_next   = thr_pr;
+    sts_rlr_next  = 0;
+    sts_pr_next   = 0;
+    rst_iwdg_tmp  = 0;
+        
     case (t)    //  TO-DO: default
         IDLE_KEY:;
         COUNT_KEY:
             begin
-                if(pr_cnt_next == 0)
+                if(cnt_pr_next == 0)
+                begin
+                    if(cnt_rlr_next == 0) 
                     begin
-                         if(iwdg_rlr_next == 0) 
-                            rst_iwdg_tmp = 1; 
-                         else 
-                            iwdg_rlr_next = iwdg_rlr - 1;
-                         pr_cnt_next = pr_thr;
+                        rst_iwdg_tmp = 1;
+                        cnt_rlr_next = 12'hFFF; 
                     end
+                    else 
+                        cnt_rlr_next = cnt_rlr - 1;
+                        cnt_pr_next = thr_pr;
+                end
                 else 
-                    pr_cnt_next = pr_cnt - 1;
+                    cnt_pr_next = cnt_pr - 1;
             end
         RELOAD_KEY:
             begin
-                pr_cnt_next = pr_thr;
-                iwdg_rlr_next = 12'hFFF;            
+                cnt_pr_next = thr_pr;
+                cnt_rlr_next = 12'hFFF;
+                sts_rlr_next = 1;            
             end
-        ACCESS_KEY:;      
+        ACCESS_KEY:
+            begin
+                cnt_rlr_next = iwdg_rlr_next;
+                sts_pr_next = 1;
+                case (iwdg_pr_next)
+                    PR_0: thr_pr_next = PR_DIV_4;
+                    PR_1: thr_pr_next = PR_DIV_8;
+                    PR_2: thr_pr_next = PR_DIV_16;
+                    PR_3: thr_pr_next = PR_DIV_32;
+                    PR_4: thr_pr_next = PR_DIV_64;
+                    PR_5: thr_pr_next = PR_DIV_128;
+                    PR_6: thr_pr_next = PR_DIV_256;
+                endcase
+            end      
     endcase
 end
 
@@ -198,20 +191,10 @@ always @(*)
 begin
     ss_next = s;
     iwdg_kr_next  = iwdg_kr;
-    iwdg_pr_next  = iwdg_pr;
+    iwdg_rlr_next = iwdg_rlr;
+    iwdg_pr_next  = iwdg_pr;   
     iwdg_st_next  = iwdg_st;
-
-    /*case (iwdg_pr) // TO_DO: default
-        PR_0: pr_thr_next = PR_DIV_4 - 1;
-        PR_1: pr_thr_next = PR_DIV_8 - 1;
-        PR_2: pr_thr_next = PR_DIV_16 - 1;
-        PR_3: pr_thr_next = PR_DIV_32 - 1;
-        PR_4: pr_thr_next = PR_DIV_64 - 1;
-        PR_5: pr_thr_next = PR_DIV_128 - 1;
-        PR_6: pr_thr_next = PR_DIV_256 - 1;
-    endcase
-    */
-       
+    
     case (s)
         IDLE: 
             begin 
@@ -235,15 +218,9 @@ begin
                 case(adr_m2s)
                     IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s;
                     IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s;  
-                    IWDG_RLR_ADR:   ;//iwdg_rlr_next = dat_m2s; 
+                    IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s; 
                     IWDG_ST_ADR:    iwdg_st_next  = dat_m2s;
-                endcase
-            
-                
-                //if(iwdg_kr_next == START_KEY) pr_counter_next = 0;
-                //if(iwdg_kr_next == RELOAD_KEY) pr_counter_next = 0;
-                //if(iwdg_kr_next == START_KEY) pr_counter_next = 0;
-                
+                endcase         
                 ack_s2m = cyc_m2s & stb_m2s;
                 ss_next = IDLE;
             end
@@ -252,15 +229,8 @@ begin
     endcase
 end
 
-//assign ack_s2m = cyc_m2s & stb_m2s;
-//assign rty_s2m = (stb_m2s == 0)? 0 : X; // SLAVE automatically negates rty_s2m when stb is negated
-//assign err_s2m = (stb_m2s == 0)? 0 : X; // SLAVE automatically negates err_s2m when stb is negated
-
 assign read_cyc  = (we_m2s == 0 && cyc_m2s == 1)? 1 : 0;
 assign write_cyc = (we_m2s == 1 && cyc_m2s == 1)? 1 : 0;
-//assign count_cyc = (iwdg_kr_next == START)? 1 : 0;
-
 assign  rst_iwdg = rst_iwdg_tmp;
-//assign  t = iwdg_kr_next;
 
 endmodule

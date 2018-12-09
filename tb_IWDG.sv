@@ -5,7 +5,7 @@ module tb_IWDG
 
 localparam CLK_PERIOD = 10,
 localparam CLK_LSI_PERIOD = 20, // 31.25 us for 32kHz rc oscillator
-localparam END_TEST = 200,
+localparam END_TEST = 400,
 
 localparam GRL  = 1,  // Granularity of the data    
 
@@ -119,7 +119,7 @@ initial
         cyc_m2s <= 0;  
         stb_m2s <= 0;
          
-         // WRITE operation 
+         // WRITE operation COUNT_KEY
          @(posedge clk_m2s);
          
          adr_m2s <= IWDG_KR_ADR;
@@ -134,7 +134,7 @@ initial
         cyc_m2s <= 0;  
         stb_m2s <= 0;
     
-        // WRITE operation 
+        // WRITE operation RELOAD_KEY
         @(posedge clk_m2s);
         
         adr_m2s <= IWDG_KR_ADR;
@@ -149,27 +149,91 @@ initial
         cyc_m2s <= 0;  
         stb_m2s <= 0;
  
-         // Pause
-         repeat(2) @(posedge clk_m2s);
-         rst_m2s <= 0;         
-  
- 
-         // WRITE operation 
-         @(posedge clk_m2s);
-         
-         adr_m2s <= IWDG_KR_ADR;
-         we_m2s  <= 1;
-         cyc_m2s <= 1;
-         stb_m2s <= 1;
-         dat_m2s <= 16'hCCCC;
-               
+        // Pause
+        repeat(2) @(posedge clk_m2s);
+        rst_m2s <= 0;         
+        
+        
+        // WRITE operation COUNT_KEY
+        @(posedge clk_m2s);
+        
+        adr_m2s <= IWDG_KR_ADR;
+        we_m2s  <= 1;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        dat_m2s <= 16'hCCCC;
+           
         fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
         join   
         cyc_m2s <= 0;  
         stb_m2s <= 0;
-    
-                                
+        
+        // Pause
+        repeat(2) @(posedge clk_m2s);
+        rst_m2s <= 0;         
+        
+        
+        // WRITE operation  ACCESS_KEY
+        @(posedge clk_m2s);
+        
+        adr_m2s <= IWDG_KR_ADR;
+        we_m2s  <= 1;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        dat_m2s <= 16'h5555;
+           
+        fork
+        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join   
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+        
+        // WRITE operation RLR register
+        @(posedge clk_m2s);
+        
+        adr_m2s <= IWDG_RLR_ADR;
+        we_m2s  <= 1;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        dat_m2s <= 12'h001;
+           
+        fork
+        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join   
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;       
+        
+        // WRITE operation PR register
+        @(posedge clk_m2s);
+        
+        adr_m2s <= IWDG_PR_ADR;
+        we_m2s  <= 1;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        dat_m2s <= 3'b001;
+           
+        fork
+        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join   
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;        
+ 
+        // WRITE operation COUNT_KEY
+        @(posedge clk_m2s);
+        
+        adr_m2s <= IWDG_KR_ADR;
+        we_m2s  <= 1;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        dat_m2s <= 16'hCCCC;
+        
+        fork
+        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join   
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+
     #END_TEST $finish;
     end
 endmodule

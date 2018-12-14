@@ -42,7 +42,7 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C   // Memory address of IWDG_ST
     output reg [31:0] dat_s2m,  // Wishbone interface binary array used to pass data to the bus.
     output reg ack_s2m,         // Wishbone interface signal used by the SLAVE to acknoledge a MASTER request. 
     
-    output rst_iwdg             // IWDG reset signal
+    output reg rst_iwdg             // IWDG reset signal
 );
                                                       // TOP FSA MOORE MACHINE: WISHBONE INTERFACE
                                                       // - REGISTERS:
@@ -68,9 +68,6 @@ reg sts_rlr, sts_rlr_next;                            // 1-bit signal. Is set wh
                                                       // - MOORE STATES:
 reg [IWDG_KR_SIZE - 1:0] t, tt_next;                  // the state is equal to IWDG Key Register.
 
-
-reg rst_iwdg_tmp;
-wire read_cyc, write_cyc;
 
                                                       // PARAMETERS:
                                                       // - PRESCALE TRUTH TABLE
@@ -117,12 +114,11 @@ begin
         begin
             s <= ss_next;
             iwdg_kr  <= iwdg_kr_next;
-            iwdg_rlr <= cnt_rlr_next;
-//            iwdg_rlr <= iwdg_rlr_next;
+            iwdg_rlr <= cnt_rlr;
             iwdg_pr  <= iwdg_pr_next;
             
-            iwdg_st[0]  <= sts_pr_next;
-            iwdg_st[1]  <= sts_rlr_next;
+            iwdg_st[0]  <= sts_pr;
+            iwdg_st[1]  <= sts_rlr;
 
         end
 end
@@ -157,35 +153,39 @@ begin
     iwdg_rlr_next = iwdg_rlr;
     iwdg_pr_next  = iwdg_pr;   
     iwdg_st_next  = iwdg_st;
-    
+    ack_s2m = 0;
+  
     case (s)
         IDLE: 
             begin 
-                if(read_cyc) ss_next = READ;
-                else if (write_cyc) ss_next = WRITE;
-                ack_s2m = 0;
+                if(we_m2s == 0 && cyc_m2s == 1) 
+                    ss_next = READ;
+                if(we_m2s == 1 && cyc_m2s == 1) 
+                    ss_next = WRITE;
             end
         READ:
             begin
+                ss_next = IDLE;
+                ack_s2m = cyc_m2s & stb_m2s;
+                
                 case(adr_m2s)
                     IWDG_KR_ADR:    dat_s2m = iwdg_kr_next;
                     IWDG_PR_ADR:    dat_s2m = iwdg_pr_next;  
                     IWDG_RLR_ADR:   dat_s2m = iwdg_rlr_next; 
                     IWDG_ST_ADR:    dat_s2m = iwdg_st_next;
                 endcase
-                ack_s2m = cyc_m2s & stb_m2s;
-                ss_next = IDLE;
             end 
         WRITE:
             begin
+                ss_next = IDLE;
+                ack_s2m = cyc_m2s & stb_m2s;
+                        
                 case(adr_m2s)
                     IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s;
                     IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s;  
                     IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s; 
                     IWDG_ST_ADR:    iwdg_st_next  = dat_m2s;
                 endcase         
-                ack_s2m = cyc_m2s & stb_m2s;
-                ss_next = IDLE;
             end
         default: 
             ss_next = IDLE;        
@@ -195,13 +195,13 @@ end
                                                     // LOWER FSA MOORE: Combinatorial part
 always @(*)
 begin
-    tt_next = iwdg_kr_next;    
+    tt_next = t;    
     cnt_rlr_next  = cnt_rlr;
     cnt_pr_next   = cnt_pr;
     thr_pr_next   = thr_pr;
     sts_rlr_next  = 0;
     sts_pr_next   = 0;
-    rst_iwdg_tmp  = 0;
+    rst_iwdg  = 0;
         
     case (t)    //  TO-DO: default
         IDLE_KEY:;
@@ -211,7 +211,7 @@ begin
                 begin
                     if(cnt_rlr_next == 0) 
                     begin
-                        rst_iwdg_tmp = 1;
+                        rst_iwdg = 1;
                         cnt_rlr_next = 12'hFFF; 
                     end
                     else 
@@ -229,6 +229,7 @@ begin
             end
         ACCESS_KEY:
             begin
+                cnt_pr_next = thr_pr;
                 cnt_rlr_next = iwdg_rlr_next;
                 sts_pr_next = 1;
                 case (iwdg_pr_next)
@@ -243,9 +244,5 @@ begin
             end      
     endcase
 end
-
-assign read_cyc  = (we_m2s == 0 && cyc_m2s == 1)? 1 : 0;
-assign write_cyc = (we_m2s == 1 && cyc_m2s == 1)? 1 : 0;
-assign  rst_iwdg = rst_iwdg_tmp;
 
 endmodule

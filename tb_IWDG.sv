@@ -7,47 +7,34 @@ localparam CLK_PERIOD = 10,
 localparam CLK_LSI_PERIOD = 20, 
 localparam END_TEST = 400,
 
-localparam GRL  = 1,      
+parameter IWDG_KR_SIZE   = 16,    
+parameter IWDG_PR_SIZE   = 3,     
+parameter IWDG_RLR_SIZE  = 12,    
+parameter IWDG_ST_SIZE   = 2,     
 
-localparam IWDG_KR_SIZE   = 16,    
-localparam IWDG_PR_SIZE   = 3,     
-localparam IWDG_RLR_SIZE  = 12,    
-localparam IWDG_ST_SIZE   = 2,     
-
-localparam BASE_ADR     = 32'h0100_0000,             
-localparam IWDG_KR_ADR  = BASE_ADR + 32'h0000_0000,  
-localparam IWDG_PR_ADR  = BASE_ADR + 32'h0000_0004,  
-localparam IWDG_RLR_ADR = BASE_ADR + 32'h0000_0008,  
-localparam IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C  
+parameter BASE_ADR     = 32'h0100_0000,             
+parameter IWDG_KR_ADR  = BASE_ADR + 32'h0000_0000,  
+parameter IWDG_PR_ADR  = BASE_ADR + 32'h0000_0004,  
+parameter IWDG_RLR_ADR = BASE_ADR + 32'h0000_0008,  
+parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C  
 
 )();
+
+// TO:DO synch dual clock
 
 reg clk_lsi;
 reg clk_m2s; 
 reg rst_m2s;       
 
-reg [31:0] dat_m2s; 
+reg [IWDG_KR_SIZE - 1:0] dat_m2s; 
 reg [31:0] adr_m2s;    
-reg [GRL:0] sel_m2s;
 
 reg cyc_m2s;
 reg we_m2s;    
 
-reg lok_m2s;                // Wishbone interface signal used to indicate that current bus cycle is uninterruptible
 reg stb_m2s;                // Wishbone interface signal used to qualify other signal in a valid cycle.
 
-/*
-reg tga_m2s;                // Wishbone address tag signal qualified by stb_m2s.    
-reg tgc_m2s;                // Wishbone cycle tag signal qualified by cyc_m2s.  
-reg tgd_m2s;                // Wishbone data tag signal qualified by stb_m2s.  
-*/
-
-reg err_s2m;                // Wishbone interface signal used by SLAVE to indicate an abnormal cycle termination.
-reg rty_s2m;                // Wishbone interface signal used by SLAVE to indicate that it is not ready to accept or send data.
-
-// reg tgd_s2m,             // Wishbone data tag signal qualified by stb_m2s.
-
-reg [31:0] dat_s2m;         // Wishbone interface binary array used to pass data to the bus.
+reg [IWDG_KR_SIZE - 1:0] dat_s2m;         // Wishbone interface binary array used to pass data to the bus.
 reg ack_s2m;                // Wishbone interface signal used by the SLAVE to acknoledge a MASTER request. 
 reg rst_iwdg;               // IWDG reset signal
 
@@ -57,7 +44,6 @@ always #(CLK_LSI_PERIOD / 2) clk_lsi = ~clk_lsi;                // clock generat
 
 IWDG                                                            // IWDG instance
  #(
-    .GRL(GRL),                                                  // Granularity of the data
 
     .IWDG_KR_SIZE(IWDG_KR_SIZE),    
     .IWDG_PR_SIZE(IWDG_PR_SIZE),     
@@ -77,17 +63,12 @@ IWDG                                                            // IWDG instance
     
     .dat_m2s(dat_m2s), 
     .adr_m2s(adr_m2s), 
-    .sel_m2s(sel_m2s),
     
     .cyc_m2s(cyc_m2s), 
     .we_m2s(we_m2s),   
     
-    .lok_m2s(lok_m2s),    
     .stb_m2s(stb_m2s), 
-    
-    .err_s2m(err_s2m),
-    .rty_s2m(rty_s2m),
-    
+        
     .dat_s2m(dat_s2m), 
     .ack_s2m(ack_s2m), 
     .rst_iwdg(rst_iwdg)

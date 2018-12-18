@@ -1,8 +1,6 @@
 module IWDG 
 #(
 
-parameter GRL  = 1,                                 // Granularity of the data
-
 parameter IWDG_KR_SIZE   = 16,                      // IWDG_KR  Last valid bit
 parameter IWDG_PR_SIZE   = 3,                       // IWDG_PR  Last valid bit
 parameter IWDG_RLR_SIZE  = 12,                      // IWDG_RLR Last valid bit
@@ -21,25 +19,16 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C   // Memory address of IWDG_ST
     input clk_m2s,              // Wishbone SYSCON module clock. The clock of the bus used to coordinate the activities on the interfaces
     input rst_m2s,              // Wishbone SYSCON module reset signal. It forces the Wishbone interface to reset. ALL WISHBONE interfaces must have one.
     
-    input [31:0] dat_m2s,       // Wishbone interface binary array used to pass data arriving from the bus.
+    input [IWDG_KR_SIZE - 1:0] dat_m2s,       // Wishbone interface binary array used to pass data arriving from the bus.
     input [31:0] adr_m2s,       // Wishbone interface binary array used to pass address arriving from the bus.
-    input [GRL:0] sel_m2s,      // Wishbone interface signal used to indicate valid data on dat_m2s during READ or dat_s2m on WRITE cycle.
         
     input cyc_m2s,              // Wishbone interface signal which indicates that a valid bus cycle is in progress.
     input we_m2s,               // Wishbone interface signal which indicates is a WRITE or READ bus cycle
     
-    input lok_m2s,              // Wishbone interface signal used to indicate that current bus cycle is uninterruptible
     input stb_m2s,              // Wishbone interface signal used to qualify other signal in a valid cycle.
-/*    
-    input tga_m2s,              // Wishbone address tag signal qualified by stb_m2s.    
-    input tgc_m2s,              // Wishbone cycle tag signal qualified by cyc_m2s.  
-    input tgd_m2s,              // Wishbone data tag signal qualified by stb_m2s.  
-*/  
-    output err_s2m,             // Wishbone interface signal used by SLAVE to indicate an abnormal cycle termination.
-    output rty_s2m,             // Wishbone interface signal used by SLAVE to indicate that it is not ready to accept or send data.
     
     // output tgd_s2m,          // Wishbone data tag signal qualified by stb_m2s. 
-    output reg [31:0] dat_s2m,  // Wishbone interface binary array used to pass data to the bus.
+    output reg [IWDG_KR_SIZE - 1:0] dat_s2m,  // Wishbone interface binary array used to pass data to the bus.
     output reg ack_s2m,         // Wishbone interface signal used by the SLAVE to acknoledge a MASTER request. 
     
     output reg rst_iwdg             // IWDG reset signal
@@ -68,7 +57,6 @@ reg sts_rlr, sts_rlr_next;                            // 1-bit signal. Is set wh
                                                       // - MOORE STATES:
 reg [IWDG_KR_SIZE - 1:0] t, tt_next;                  // the state is equal to IWDG Key Register.
 
-
                                                       // PARAMETERS:
                                                       // - PRESCALE TRUTH TABLE
 localparam PR_0 = 3'b000;                             
@@ -79,13 +67,24 @@ localparam PR_4 = 3'b100;
 localparam PR_5 = 3'b101;
 localparam PR_6 = 3'b110;
 
-localparam PR_DIV_4   =  9'b0_0000_0100 - 1;
+/*localparam PR_DIV_4   =  9'b0_0000_0100 - 1;
 localparam PR_DIV_8   =  9'b0_0000_1000 - 1;
 localparam PR_DIV_16  =  9'b0_0001_0000 - 1;
 localparam PR_DIV_32  =  9'b0_0010_0000 - 1;
 localparam PR_DIV_64  =  9'b0_0100_0000 - 1;
 localparam PR_DIV_128 =  9'b0_1000_0000 - 1;
 localparam PR_DIV_256 =  9'b1_0000_0000 - 1;
+*/
+
+localparam PR_DIV_2   =  2'b11;
+localparam PR_DIV_4   =  7'b000_0000;
+localparam PR_DIV_8   =  7'b000_0010 - 1;
+localparam PR_DIV_16  =  7'b000_0100 - 1;
+localparam PR_DIV_32  =  7'b000_1000 - 1;
+localparam PR_DIV_64  =  7'b001_0000 - 1;
+localparam PR_DIV_128 =  7'b010_0000 - 1;
+localparam PR_DIV_256 =  7'b100_0000 - 1;
+
 
                                                     // - TOP FSA MOORE MACHINE states decodification
 localparam IDLE  = 2'b00;   
@@ -154,6 +153,7 @@ begin
     iwdg_pr_next  = iwdg_pr;   
     iwdg_st_next  = iwdg_st;
     ack_s2m = 0;
+    dat_s2m = 0;    
   
     case (s)
         IDLE: 
@@ -168,11 +168,12 @@ begin
                 ss_next = IDLE;
                 ack_s2m = cyc_m2s & stb_m2s;
                 
+                // {2'boo, iwfg_}
                 case(adr_m2s)
-                    IWDG_KR_ADR:    dat_s2m = iwdg_kr_next;
-                    IWDG_PR_ADR:    dat_s2m = iwdg_pr_next;  
-                    IWDG_RLR_ADR:   dat_s2m = iwdg_rlr_next; 
-                    IWDG_ST_ADR:    dat_s2m = iwdg_st_next;
+                    IWDG_KR_ADR:    dat_s2m = 16'h0000 + iwdg_kr_next;
+                    IWDG_PR_ADR:    dat_s2m = 16'h0000 + iwdg_pr_next;  
+                    IWDG_RLR_ADR:   dat_s2m = 16'h0000 + iwdg_rlr_next; 
+                    IWDG_ST_ADR:    dat_s2m = 16'h0000 + iwdg_st_next;
                 endcase
             end 
         WRITE:
@@ -181,10 +182,10 @@ begin
                 ack_s2m = cyc_m2s & stb_m2s;
                         
                 case(adr_m2s)
-                    IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s;
-                    IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s;  
-                    IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s; 
-                    IWDG_ST_ADR:    iwdg_st_next  = dat_m2s;
+                    IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s[IWDG_KR_SIZE - 1:0];
+                    IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s[IWDG_PR_SIZE - 1:0];  
+                    IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s[IWDG_RLR_SIZE - 1:0]; 
+                    IWDG_ST_ADR:    iwdg_st_next  = dat_m2s[IWDG_ST_SIZE - 1:0];
                 endcase         
             end
         default: 
@@ -201,7 +202,7 @@ begin
     thr_pr_next   = thr_pr;
     sts_rlr_next  = 0;
     sts_pr_next   = 0;
-    rst_iwdg  = 0;
+    rst_iwdg      = 0;
         
     case (t)    //  TO-DO: default
         IDLE_KEY:;
@@ -233,13 +234,13 @@ begin
                 cnt_rlr_next = iwdg_rlr_next;
                 sts_pr_next = 1;
                 case (iwdg_pr_next)
-                    PR_0: thr_pr_next = PR_DIV_4;
-                    PR_1: thr_pr_next = PR_DIV_8;
-                    PR_2: thr_pr_next = PR_DIV_16;
-                    PR_3: thr_pr_next = PR_DIV_32;
-                    PR_4: thr_pr_next = PR_DIV_64;
-                    PR_5: thr_pr_next = PR_DIV_128;
-                    PR_6: thr_pr_next = PR_DIV_256;
+                    PR_0: thr_pr_next = {PR_DIV_4,   PR_DIV_2};
+                    PR_1: thr_pr_next = {PR_DIV_8,   PR_DIV_2};
+                    PR_2: thr_pr_next = {PR_DIV_16,  PR_DIV_2};
+                    PR_3: thr_pr_next = {PR_DIV_32,  PR_DIV_2};
+                    PR_4: thr_pr_next = {PR_DIV_64,  PR_DIV_2};
+                    PR_5: thr_pr_next = {PR_DIV_128, PR_DIV_2};
+                    PR_6: thr_pr_next = {PR_DIV_256, PR_DIV_2};
                 endcase
             end      
     endcase

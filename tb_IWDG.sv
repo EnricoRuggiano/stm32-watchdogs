@@ -89,14 +89,14 @@ initial
          
          // READ operation
          @(posedge clk_m2s); 
-         adr_m2s <= IWDG_KR_ADR;
+         adr_m2s <= IWDG_RLR_ADR;
          we_m2s  <= 0;
          cyc_m2s <= 1;
          stb_m2s <= 1;
        
         fork
             while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
+        join        
         cyc_m2s <= 0;  
         stb_m2s <= 0;
          
@@ -125,7 +125,7 @@ initial
         dat_m2s <= 16'hAAAA;
            
         fork
-        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
         join   
         cyc_m2s <= 0;  
         stb_m2s <= 0;

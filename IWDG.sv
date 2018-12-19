@@ -50,7 +50,7 @@ reg [1:0] s, ss_next;                                 // 3 states codified in 2 
 
 reg [IWDG_RLR_SIZE- 1:0] cnt_rlr, cnt_rlr_next;       // RLR-Sized bit counter register. The downcount is performed here. 
 reg [7:0] cnt_pr, cnt_pr_next;                        // 8-bit counter register. Counts how many lsi-clock transition before donwcount the cnt_rlr
-reg [7:0] thr_pr, thr_pr_next;                        // 8-bit threshold register. Constant value needed to compare the cnt_pr register.
+reg [5:0] thr_pr, thr_pr_next;                        // 8-bit threshold register. Constant value needed to compare the cnt_pr register.
 reg sts_pr,  sts_pr_next;                             // 1-bit signal. Is set when a PRESCALE operation is done.
 reg sts_rlr, sts_rlr_next;                            // 1-bit signal. Is set when a RELOAD operation is done
 
@@ -128,7 +128,7 @@ begin
         begin
             t <= IDLE_KEY;       
             cnt_rlr  <= 12'h001; //12'hFFF
-            cnt_pr   <= PR_DIV_4;
+            cnt_pr   <= {PR_DIV_4, PR_DIV_2};
             thr_pr   <= PR_DIV_4;
             sts_rlr  <= 0;
             sts_pr   <= 0;
@@ -149,7 +149,7 @@ always @(*)
 begin
     ss_next = s;
     iwdg_kr_next  = iwdg_kr;
-    iwdg_rlr_next = iwdg_rlr;
+    iwdg_rlr_next = cnt_rlr_next;   //iwdg_rlr
     iwdg_pr_next  = iwdg_pr;   
     iwdg_st_next  = iwdg_st;
     ack_s2m = 0;
@@ -187,9 +187,7 @@ begin
                     IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s[IWDG_RLR_SIZE - 1:0]; 
                     IWDG_ST_ADR:    iwdg_st_next  = dat_m2s[IWDG_ST_SIZE - 1:0];
                 endcase         
-            end
-        default: 
-            ss_next = IDLE;        
+            end       
     endcase
 end
 
@@ -217,30 +215,30 @@ begin
                     end
                     else 
                         cnt_rlr_next = cnt_rlr - 1;
-                        cnt_pr_next = thr_pr;
+                        cnt_pr_next = {thr_pr, PR_DIV_2};
                 end
                 else 
                     cnt_pr_next = cnt_pr - 1;
             end
         RELOAD_KEY:
             begin
-                cnt_pr_next = thr_pr;
+                cnt_pr_next = {thr_pr, PR_DIV_2};
                 cnt_rlr_next = 12'hFFF;
                 sts_rlr_next = 1;            
             end
         ACCESS_KEY:
             begin
-                cnt_pr_next = thr_pr;
+                cnt_pr_next = {thr_pr, PR_DIV_2};
                 cnt_rlr_next = iwdg_rlr_next;
                 sts_pr_next = 1;
                 case (iwdg_pr_next)
-                    PR_0: thr_pr_next = {PR_DIV_4,   PR_DIV_2};
-                    PR_1: thr_pr_next = {PR_DIV_8,   PR_DIV_2};
-                    PR_2: thr_pr_next = {PR_DIV_16,  PR_DIV_2};
-                    PR_3: thr_pr_next = {PR_DIV_32,  PR_DIV_2};
-                    PR_4: thr_pr_next = {PR_DIV_64,  PR_DIV_2};
-                    PR_5: thr_pr_next = {PR_DIV_128, PR_DIV_2};
-                    PR_6: thr_pr_next = {PR_DIV_256, PR_DIV_2};
+                    PR_0: thr_pr_next = PR_DIV_4;
+                    PR_1: thr_pr_next = PR_DIV_8;
+                    PR_2: thr_pr_next = PR_DIV_16;
+                    PR_3: thr_pr_next = PR_DIV_32;
+                    PR_4: thr_pr_next = PR_DIV_64;
+                    PR_5: thr_pr_next = PR_DIV_128;
+                    PR_6: thr_pr_next = PR_DIV_256;
                 endcase
             end      
     endcase

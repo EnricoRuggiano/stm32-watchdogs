@@ -98,6 +98,88 @@ localparam RELOAD_KEY = 16'hAAAA;
 localparam ACCESS_KEY = 16'h5555;  
 
 
+            
+                                                   // FIFO
+localparam ALMOST_OFFSET = 9'h080;
+localparam DATA_WIDTH = 16;
+localparam DEVICE = "7SERIES";
+localparam FIFO_SIZE = "18Kb";
+localparam FIRST_WORD_FALL_THROUGH = "FALSE";
+                                                   
+wire [IWDG_KR_SIZE - 1:0]  do_t2d,  do_d2t; 
+wire [IWDG_KR_SIZE - 1:0]  di_t2d,  di_d2t;
+
+wire      empty_t2d,    empty_d2t;
+wire       full_t2d,    full_d2t;
+wire       rden_t2d,    rden_d2t;
+wire       wren_t2d,    wren_d2t;
+
+wire      rdclk_t2d,    rdclk_d2t;
+wire      wrclk_t2d,    wrclk_d2t;
+wire        rst_t2d,      rst_d2t;
+
+reg [IWDG_KR_SIZE - 1:0]  di_t2d_tmp,  di_d2t_tmp;
+
+reg       rden_t2d_tmp,    rden_d2t_tmp;
+reg       wren_t2d_tmp,    wren_d2t_tmp;
+ 
+reg [31:0] adr_t2d, adr_t2d_next; 
+reg [31:0] adr_d2t, adr_d2t_next;  
+
+assign wrclk_t2d = clk_m2s; 
+assign rdclk_t2d = clk_lsi;
+assign rst_t2d   = rst_m2s; 
+assign di_t2d    = di_t2d_tmp;
+assign rden_t2d  = rden_t2d_tmp;
+assign wren_t2d  = wren_t2d_tmp;
+
+assign wrclk_d2t = clk_lsi;
+assign rdclk_d2t = clk_m2s;
+assign rst_d2t   = rst_m2s;
+assign di_d2t    = di_d2t_tmp;
+assign rden_d2t  = rden_d2t_tmp;
+assign wren_d2t  = wren_d2t_tmp;
+
+
+
+FIFO_DUALCLOCK_MACRO  #(
+  .ALMOST_EMPTY_OFFSET(ALMOST_OFFSET),               // Sets the almost empty threshold
+  .ALMOST_FULL_OFFSET(ALMOST_OFFSET),                // Sets almost full threshold
+  .DATA_WIDTH(DATA_WIDTH),                           // Valid values are 1-72 (37-72 only valid when FIFO_SIZE="36Kb")
+  .DEVICE(DEVICE),                                   // Target device: "7SERIES" 
+  .FIFO_SIZE (FIFO_SIZE),                            // Target BRAM: "18Kb" or "36Kb" 
+  .FIRST_WORD_FALL_THROUGH (FIRST_WORD_FALL_THROUGH) // Sets the FIFO FWFT to "TRUE" or "FALSE" 
+) FIFO_DUALCLOCK_MACRO_t2d (
+  .DO(do_t2d),                                       // Output data, width defined by DATA_WIDTH parameter
+  .EMPTY(empty_t2d),                                 // 1-bit output empty
+  .FULL(full_t2d),                                   // 1-bit output full
+  .DI(di_t2d),                                       // Input data, width defined by DATA_WIDTH parameter
+  .RDCLK(rdclk_t2d),                                 // 1-bit input read clock
+  .RDEN(rden_t2d),                                   // 1-bit input read enable
+  .RST(rst_t2d),                                     // 1-bit input reset
+  .WRCLK(wrclk_t2d),                                 // 1-bit input write clock
+  .WREN(wren_t2d)                                    // 1-bit input write enable
+);
+
+FIFO_DUALCLOCK_MACRO  #(
+  .ALMOST_EMPTY_OFFSET(ALMOST_OFFSET),               // Sets the almost empty threshold
+  .ALMOST_FULL_OFFSET(ALMOST_OFFSET),                // Sets almost full threshold
+  .DATA_WIDTH(DATA_WIDTH),                           // Valid values are 1-72 (37-72 only valid when FIFO_SIZE="36Kb")
+  .DEVICE(DEVICE),                                   // Target device: "7SERIES" 
+  .FIFO_SIZE (FIFO_SIZE),                            // Target BRAM: "18Kb" or "36Kb" 
+  .FIRST_WORD_FALL_THROUGH (FIRST_WORD_FALL_THROUGH) // Sets the FIFO FWFT to "TRUE" or "FALSE" 
+) FIFO_DUALCLOCK_MACRO_d2t (
+  .DO(do_d2t),                                       // Output data, width defined by DATA_WIDTH parameter
+  .EMPTY(empty_d2t),                                 // 1-bit output empty
+  .FULL(full_d2t),                                   // 1-bit output full
+  .DI(di_d2t),                                       // Input data, width defined by DATA_WIDTH parameter
+  .RDCLK(rdclk_d2t),                                 // 1-bit input read clock
+  .RDEN(rden_d2t),                                   // 1-bit input read enable
+  .RST(rst_d2t),                                     // 1-bit input reset
+  .WRCLK(wrclk_d2t),                                 // 1-bit input write clock
+  .WREN(wren_d2t)                                    // 1-bit input write enable
+);
+
                                                     // TOP FSA MOORE: Sequential part 
 always @(posedge clk_m2s)
 begin
@@ -107,18 +189,28 @@ begin
             iwdg_kr  <= 16'h0000;
             iwdg_rlr <= 12'hfff;
             iwdg_pr  <= 3'b000;
-            iwdg_st  <= 2'b00;            
+            iwdg_st  <= 2'b00;
+            
+            adr_t2d  <= 0;            
         end
     else 
         begin
             s <= ss_next;
             iwdg_kr  <= iwdg_kr_next;
-            iwdg_rlr <= cnt_rlr;
-            iwdg_pr  <= iwdg_pr_next;
+            //iwdg_rlr <= cnt_rlr;                
             
-            iwdg_st[0]  <= sts_pr;
-            iwdg_st[1]  <= sts_rlr;
-
+            iwdg_rlr <= iwdg_rlr_next;
+            iwdg_pr  <= iwdg_pr_next;
+            iwdg_st  <= iwdg_st_next;
+            adr_t2d  <= adr_t2d_next;
+            //iwdg_st[0]  <= sts_pr;
+            //iwdg_st[1]  <= sts_rlr;
+            /*
+            if(!empty_dtu)
+                begin
+                    iwdg_rlr <= do_dtu[0];
+                    
+                end*/
         end
 end
                                                     // LOWER FSA MOORE: Sequential part
@@ -132,15 +224,19 @@ begin
             thr_pr   <= PR_DIV_4;
             sts_rlr  <= 0;
             sts_pr   <= 0;
+            
+            adr_d2t  <= 0;            
         end
     else
         begin
-            t <= iwdg_kr;          
+            t <= tt_next;          
             cnt_rlr  <= cnt_rlr_next;
             cnt_pr   <= cnt_pr_next;
             thr_pr   <= thr_pr_next;
             sts_rlr  <= sts_rlr_next;
             sts_pr   <= sts_pr_next;
+        
+            adr_d2t  <= adr_d2t_next;
         end
 end
 
@@ -149,12 +245,18 @@ always @(*)
 begin
     ss_next = s;
     iwdg_kr_next  = iwdg_kr;
-    iwdg_rlr_next = cnt_rlr_next;   //iwdg_rlr
+    
+    iwdg_rlr_next = iwdg_rlr;
+    //iwdg_rlr_next = cnt_rlr_next;   //iwdg_rlr
     iwdg_pr_next  = iwdg_pr;   
     iwdg_st_next  = iwdg_st;
     ack_s2m = 0;
     dat_s2m = 0;    
-  
+    
+    adr_t2d_next = adr_t2d;
+    wren_t2d_tmp = 0;
+    rden_d2t_tmp = 0;  
+      
     case (s)
         IDLE: 
             begin 
@@ -186,7 +288,16 @@ begin
                     IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s[IWDG_PR_SIZE - 1:0];  
                     IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s[IWDG_RLR_SIZE - 1:0]; 
                     IWDG_ST_ADR:    iwdg_st_next  = dat_m2s[IWDG_ST_SIZE - 1:0];
-                endcase         
+                endcase    
+                
+               // if(empty_t2d)
+               //     begin
+                        di_t2d_tmp = dat_m2s[IWDG_KR_SIZE - 1:0];
+                        wren_t2d_tmp = 1;
+                        adr_t2d_next = adr_m2s;    
+               //     end     
+                //else
+                  //  ss_next = WRITE;
             end       
     endcase
 end
@@ -201,6 +312,23 @@ begin
     sts_rlr_next  = 0;
     sts_pr_next   = 0;
     rst_iwdg      = 0;
+    
+    rden_t2d_tmp = 0;
+    wren_d2t_tmp = 0;
+    adr_d2t = adr_d2t_next;
+    
+    if(!empty_t2d)
+        begin
+            rden_t2d_tmp = 1;
+            
+            case (adr_t2d)
+                IWDG_KR_ADR:    tt_next  = do_t2d [IWDG_KR_SIZE - 1:0];
+               // IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s[IWDG_PR_SIZE - 1:0];  
+               // IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s[IWDG_RLR_SIZE - 1:0]; 
+               // IWDG_ST_ADR:    iwdg_st_next  = dat_m2s[IWDG_ST_SIZE - 1:0];
+            endcase;            
+        end
+    
         
     case (t)    //  TO-DO: default
         IDLE_KEY:;
@@ -229,7 +357,7 @@ begin
         ACCESS_KEY:
             begin
                 cnt_pr_next = {thr_pr, PR_DIV_2};
-                cnt_rlr_next = iwdg_rlr_next;
+                //cnt_rlr_next = iwdg_rlr_next;
                 sts_pr_next = 1;
                 case (iwdg_pr_next)
                     PR_0: thr_pr_next = PR_DIV_4;

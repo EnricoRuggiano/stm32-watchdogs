@@ -84,7 +84,7 @@ initial
         cyc_m2s = 0;        
         stb_m2s = 0;    
                         
-        repeat(2) @(posedge clk_m2s);
+        repeat(10) @(posedge clk_m2s);
         rst_m2s <= 0;         
          
          // READ operation

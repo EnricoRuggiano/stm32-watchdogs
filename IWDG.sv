@@ -99,17 +99,33 @@ localparam COUNT_KEY  = 16'hCCCC;
 localparam RELOAD_KEY = 16'hAAAA;  
 localparam ACCESS_KEY = 16'h5555;  
             
-localparam HEADER_SIZE = 2;            
+localparam ADR_HEADER_SIZE = 2;            
 localparam KR_HEADER  = 2'b00;
 localparam RLR_HEADER = 2'b01;
 localparam PR_HEADER  = 2'b10;
 localparam ST_HEADER  = 2'b11;
-                                                   // FIFO
+
+localparam OPR_HEADER_SIZE  = 1;
+localparam RD_HEADER  = 0;
+localparam WR_HEADER  = 1;
+
+localparam PAYLOAD_SIZE = IWDG_KR_SIZE;
+localparam ZERO_MASK    = 16'h0000;
+                       
+                                        // FIFO
 localparam ALMOST_OFFSET = 9'h080;
-localparam DATA_WIDTH = IWDG_KR_SIZE + HEADER_SIZE;
+localparam DATA_WIDTH = OPR_HEADER_SIZE + ADR_HEADER_SIZE + PAYLOAD_SIZE;
 localparam DEVICE = "7SERIES";
 localparam FIFO_SIZE = "18Kb";
 localparam FIRST_WORD_FALL_THROUGH = "TRUE";
+
+
+localparam PAYLOAD_STR    = 0;
+localparam PAYLOAD_END    = PAYLOAD_SIZE - 1;
+localparam ADR_HEADER_STR = PAYLOAD_SIZE;
+localparam ADR_HEADER_END = PAYLOAD_SIZE + ADR_HEADER_SIZE - 1;
+localparam OPR_HEADER_STR = PAYLOAD_SIZE + ADR_HEADER_SIZE;
+localparam OPR_HEADER_END = DATA_WIDTH - 1;
                                                    
 wire [DATA_WIDTH - 1:0]  do_t2d,  do_d2t; 
 wire [DATA_WIDTH - 1:0]  di_t2d,  di_d2t;
@@ -128,10 +144,12 @@ reg [DATA_WIDTH - 1:0]  di_t2d_tmp,  di_d2t_tmp;
 reg       rden_t2d_tmp,    rden_d2t_tmp;
 reg       wren_t2d_tmp,    wren_d2t_tmp;
  
-reg [HEADER_SIZE - 1:0] header_t2d; 
-reg [HEADER_SIZE - 1:0] header_d2t;  
-reg [DATA_WIDTH - HEADER_SIZE - 1:0] payload_t2d;
-reg [DATA_WIDTH - HEADER_SIZE - 1:0] payload_d2t;
+reg [OPR_HEADER_SIZE - 1:0] opr_header_t2d; 
+reg [OPR_HEADER_SIZE - 1:0] opr_header_d2t;  
+reg [ADR_HEADER_SIZE - 1:0] adr_header_t2d; 
+reg [ADR_HEADER_SIZE - 1:0] adr_header_d2t;  
+reg [DATA_WIDTH - ADR_HEADER_SIZE - 1:0] payload_t2d;
+reg [DATA_WIDTH - ADR_HEADER_SIZE - 1:0] payload_d2t;
 
 assign wrclk_t2d = clk_m2s; 
 assign rdclk_t2d = clk_lsi;
@@ -147,10 +165,12 @@ assign di_d2t    = di_d2t_tmp;
 assign rden_d2t  = rden_d2t_tmp;
 assign wren_d2t  = wren_d2t_tmp;
 
-assign header_t2d  = do_t2d[DATA_WIDTH - 1: DATA_WIDTH - HEADER_SIZE];
-assign header_d2t  = do_d2t[DATA_WIDTH - 1: DATA_WIDTH - HEADER_SIZE];
-assign payload_t2d = do_t2d[DATA_WIDTH - HEADER_SIZE - 1:0];
-assign payload_d2t = do_d2t[DATA_WIDTH - HEADER_SIZE - 1:0];
+assign opr_header_t2d  = do_t2d [OPR_HEADER_END : OPR_HEADER_STR];
+assign opr_header_d2t  = do_d2t [OPR_HEADER_END : OPR_HEADER_STR];
+assign adr_header_t2d  = do_t2d [ADR_HEADER_END : ADR_HEADER_STR];
+assign adr_header_d2t  = do_d2t [ADR_HEADER_END : ADR_HEADER_STR];
+assign payload_t2d     = do_t2d [   PAYLOAD_END : PAYLOAD_STR];
+assign payload_d2t     = do_d2t [   PAYLOAD_END : PAYLOAD_STR];
 
 FIFO_DUALCLOCK_MACRO  #(
   .ALMOST_EMPTY_OFFSET(ALMOST_OFFSET),               // Sets the almost empty threshold
@@ -212,8 +232,7 @@ begin
             cnt_pr   <= {PR_DIV_4, PR_DIV_2};
             thr_pr   <= PR_DIV_4;
             sts_rlr  <= 0;
-            sts_pr   <= 0;
-                        
+            sts_pr   <= 0;                        
         end
     else
         begin
@@ -231,13 +250,18 @@ end
 always @(*)
 begin
     ss_next = s;
-
-    ack_s2m = 0;
-    dat_s2m = 0;    
+    dat_s2m = 0;
+    ack_s2m = 0;    
     
     wren_t2d_tmp = 0;
     rden_d2t_tmp = 0;  
-      
+    
+    if(!empty_d2t)
+        begin
+            rden_d2t_tmp = 1;
+            dat_s2m = 0 + do_d2t;
+        end
+        
     case (s)
         IDLE: 
             begin 
@@ -250,7 +274,14 @@ begin
             begin
                 ss_next = IDLE;
                 ack_s2m = cyc_m2s & stb_m2s;
-                
+                wren_t2d_tmp = 1;
+                    
+                case (adr_m2s)
+                IWDG_KR_ADR:    di_t2d_tmp = {RD_HEADER, KR_HEADER,  ZERO_MASK};
+                IWDG_RLR_ADR:   di_t2d_tmp = {RD_HEADER, RLR_HEADER, ZERO_MASK};
+                IWDG_PR_ADR:    di_t2d_tmp = {RD_HEADER, PR_HEADER,  ZERO_MASK};
+                IWDG_ST_ADR:    di_t2d_tmp = {RD_HEADER, ST_HEADER,  ZERO_MASK};
+                endcase;
             end 
         WRITE:
             begin
@@ -259,10 +290,10 @@ begin
                 wren_t2d_tmp = 1;
                 
                 case (adr_m2s)
-                IWDG_KR_ADR:    di_t2d_tmp = {KR_HEADER,  dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
-                IWDG_RLR_ADR:   di_t2d_tmp = {RLR_HEADER, dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
-                IWDG_PR_ADR:    di_t2d_tmp = {PR_HEADER,  dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
-                IWDG_ST_ADR:    di_t2d_tmp = {ST_HEADER,  dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
+                IWDG_KR_ADR:    di_t2d_tmp = {WR_HEADER, KR_HEADER,  dat_m2s[PAYLOAD_END : PAYLOAD_STR]};
+                IWDG_RLR_ADR:   di_t2d_tmp = {WR_HEADER, RLR_HEADER, dat_m2s[PAYLOAD_END : PAYLOAD_STR]};
+                IWDG_PR_ADR:    di_t2d_tmp = {WR_HEADER, PR_HEADER,  dat_m2s[PAYLOAD_END : PAYLOAD_STR]};
+                IWDG_ST_ADR:    di_t2d_tmp = {WR_HEADER, ST_HEADER,  dat_m2s[PAYLOAD_END : PAYLOAD_STR]};
                 endcase;    
             end       
     endcase
@@ -286,39 +317,65 @@ begin
         begin
             rden_t2d_tmp = 1;
             
-            case (header_t2d)
-                KR_HEADER:  tt_next  = payload_t2d;
-                PR_HEADER:    
-                    begin
-                        if(tt_next == ACCESS_KEY)
-                            begin
-                                case (payload_t2d [IWDG_PR_SIZE - 1:0])
-                                    PR_0: thr_pr_next = PR_DIV_4;
-                                    PR_1: thr_pr_next = PR_DIV_8;
-                                    PR_2: thr_pr_next = PR_DIV_16;
-                                    PR_3: thr_pr_next = PR_DIV_32;
-                                    PR_4: thr_pr_next = PR_DIV_64;
-                                    PR_5: thr_pr_next = PR_DIV_128;
-                                    PR_6: thr_pr_next = PR_DIV_256;
-                                endcase   
-                            
-                                cnt_pr_next = {thr_pr_next, PR_DIV_2};
-                                sts_pr_next = 1;
-                            end 
-                    end
+            case (opr_header_t2d)
+            
+            RD_HEADER:
+                begin
+                wren_d2t_tmp = 1;
+
+                case(adr_header_t2d)
+                    KR_HEADER:  di_d2t_tmp = 0 + tt_next;
+                    PR_HEADER:
+                        begin
+                            case(thr_pr_next)
+                            PR_DIV_4:     di_d2t_tmp = 0 + PR_0;
+                            PR_DIV_8:     di_d2t_tmp = 0 + PR_1;
+                            PR_DIV_16:    di_d2t_tmp = 0 + PR_2;
+                            PR_DIV_32:    di_d2t_tmp = 0 + PR_3;
+                            PR_DIV_64:    di_d2t_tmp = 0 + PR_4;
+                            PR_DIV_128:   di_d2t_tmp = 0 + PR_5;
+                            PR_DIV_256:   di_d2t_tmp = 0 + PR_6;
+                            endcase
+                        end
+                    RLR_HEADER: di_d2t_tmp = 0 + cnt_rlr_next;
+                    ST_HEADER:  di_d2t_tmp = 0 + {sts_rlr_next, sts_pr_next};
+                 endcase
+                 end              
+            WR_HEADER:
+                case (adr_header_t2d)
+                    KR_HEADER:  tt_next  = payload_t2d;
+                    PR_HEADER:    
+                        begin
+                            if(tt_next == ACCESS_KEY)
+                                begin
+                                    case (payload_t2d [IWDG_PR_SIZE - 1:0])
+                                        PR_0: thr_pr_next = PR_DIV_4;
+                                        PR_1: thr_pr_next = PR_DIV_8;
+                                        PR_2: thr_pr_next = PR_DIV_16;
+                                        PR_3: thr_pr_next = PR_DIV_32;
+                                        PR_4: thr_pr_next = PR_DIV_64;
+                                        PR_5: thr_pr_next = PR_DIV_128;
+                                        PR_6: thr_pr_next = PR_DIV_256;
+                                    endcase   
+                                
+                                    cnt_pr_next = {thr_pr_next, PR_DIV_2};
+                                    sts_pr_next = 1;
+                                end 
+                        end
+                        
+                    RLR_HEADER:   
+                        begin
+                            if(tt_next == ACCESS_KEY)
+                                    cnt_rlr_next = payload_t2d[IWDG_RLR_SIZE - 1:0];
+                        end     
                     
-                RLR_HEADER:   
-                    begin
-                        if(tt_next == ACCESS_KEY)
-                                cnt_rlr_next = payload_t2d[IWDG_RLR_SIZE - 1:0];
-                    end     
-                
-                ST_HEADER:
-                    begin
-                        sts_pr_next  = payload_t2d[0];
-                        sts_rlr_next = payload_t2d[1];
-                    end
-            endcase            
+                    ST_HEADER:
+                        begin
+                            sts_pr_next  = payload_t2d[0];
+                            sts_rlr_next = payload_t2d[1];
+                        end
+                endcase
+           endcase            
         end
     
         

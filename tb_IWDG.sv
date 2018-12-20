@@ -89,7 +89,7 @@ initial
          
          // READ operation
          @(posedge clk_m2s); 
-         adr_m2s <= IWDG_RLR_ADR;
+         adr_m2s <= IWDG_KR_ADR;
          we_m2s  <= 0;
          cyc_m2s <= 1;
          stb_m2s <= 1;
@@ -214,6 +214,46 @@ initial
         join   
         cyc_m2s <= 0;  
         stb_m2s <= 0;
+
+         // READ operation
+         @(posedge clk_m2s); 
+         adr_m2s <= IWDG_ST_ADR;
+         we_m2s  <= 0;
+         cyc_m2s <= 1;
+         stb_m2s <= 1;
+       
+        fork
+            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join        
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+        
+        // READ operation
+        @(posedge clk_m2s); 
+        adr_m2s <= IWDG_PR_ADR;
+        we_m2s  <= 0;
+        cyc_m2s <= 1;
+        stb_m2s <= 1;
+        
+        fork
+            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join        
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+
+        // READ operation
+         @(posedge clk_m2s); 
+         adr_m2s <= IWDG_KR_ADR;
+         we_m2s  <= 0;
+         cyc_m2s <= 1;
+         stb_m2s <= 1;
+       
+        fork
+            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
+        join        
+        cyc_m2s <= 0;  
+        stb_m2s <= 0;
+        
 
     #END_TEST $finish;
     end

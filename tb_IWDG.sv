@@ -5,7 +5,7 @@ module tb_IWDG
 
 localparam CLK_PERIOD = 10,
 localparam CLK_LSI_PERIOD = 20, 
-localparam END_TEST = 400,
+localparam END_TEST = 500,
 
 parameter IWDG_KR_SIZE   = 16,    
 parameter IWDG_PR_SIZE   = 3,     

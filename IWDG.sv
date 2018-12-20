@@ -36,11 +36,11 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C   // Memory address of IWDG_ST
                                                       // TOP FSA MOORE MACHINE: WISHBONE INTERFACE
                                                       // - REGISTERS:
 
-reg [IWDG_KR_SIZE - 1:0]  iwdg_kr,  iwdg_kr_next;     // IWDG Key Register. Key word changes the state of LOWER FSA MOORE MACHINE.
+/*reg [IWDG_KR_SIZE - 1:0]  iwdg_kr,  iwdg_kr_next;     // IWDG Key Register. Key word changes the state of LOWER FSA MOORE MACHINE.
 reg [IWDG_PR_SIZE - 1:0]  iwdg_pr,  iwdg_pr_next;     // IWDG Prescale Register. It changes how many clk cycle to count to change the countdown.
 reg [IWDG_RLR_SIZE- 1:0]  iwdg_rlr, iwdg_rlr_next;    // IWDG Reload Register. It stores the IWDG countdown.
 reg [IWDG_ST_SIZE - 1:0]  iwdg_st,  iwdg_st_next;     // IWDG Status Register. It is set when a RELOAD or PRESCALE operation is done.
-
+*/
                                                       // - MOORE STATES:
 reg [1:0] s, ss_next;                                 // 3 states codified in 2 bits. One is unused.
 
@@ -51,6 +51,8 @@ reg [1:0] s, ss_next;                                 // 3 states codified in 2 
 reg [IWDG_RLR_SIZE- 1:0] cnt_rlr, cnt_rlr_next;       // RLR-Sized bit counter register. The downcount is performed here. 
 reg [7:0] cnt_pr, cnt_pr_next;                        // 8-bit counter register. Counts how many lsi-clock transition before donwcount the cnt_rlr
 reg [5:0] thr_pr, thr_pr_next;                        // 8-bit threshold register. Constant value needed to compare the cnt_pr register.
+reg [IWDG_ST_SIZE - 1:0] sts, sts_next;
+
 reg sts_pr,  sts_pr_next;                             // 1-bit signal. Is set when a PRESCALE operation is done.
 reg sts_rlr, sts_rlr_next;                            // 1-bit signal. Is set when a RELOAD operation is done
 
@@ -96,18 +98,21 @@ localparam IDLE_KEY   = 16'h0000;
 localparam COUNT_KEY  = 16'hCCCC; 
 localparam RELOAD_KEY = 16'hAAAA;  
 localparam ACCESS_KEY = 16'h5555;  
-
-
             
+localparam HEADER_SIZE = 2;            
+localparam KR_HEADER  = 2'b00;
+localparam RLR_HEADER = 2'b01;
+localparam PR_HEADER  = 2'b10;
+localparam ST_HEADER  = 2'b11;
                                                    // FIFO
 localparam ALMOST_OFFSET = 9'h080;
-localparam DATA_WIDTH = 16;
+localparam DATA_WIDTH = IWDG_KR_SIZE + HEADER_SIZE;
 localparam DEVICE = "7SERIES";
 localparam FIFO_SIZE = "18Kb";
-localparam FIRST_WORD_FALL_THROUGH = "FALSE";
+localparam FIRST_WORD_FALL_THROUGH = "TRUE";
                                                    
-wire [IWDG_KR_SIZE - 1:0]  do_t2d,  do_d2t; 
-wire [IWDG_KR_SIZE - 1:0]  di_t2d,  di_d2t;
+wire [DATA_WIDTH - 1:0]  do_t2d,  do_d2t; 
+wire [DATA_WIDTH - 1:0]  di_t2d,  di_d2t;
 
 wire      empty_t2d,    empty_d2t;
 wire       full_t2d,    full_d2t;
@@ -118,13 +123,15 @@ wire      rdclk_t2d,    rdclk_d2t;
 wire      wrclk_t2d,    wrclk_d2t;
 wire        rst_t2d,      rst_d2t;
 
-reg [IWDG_KR_SIZE - 1:0]  di_t2d_tmp,  di_d2t_tmp;
+reg [DATA_WIDTH - 1:0]  di_t2d_tmp,  di_d2t_tmp;
 
 reg       rden_t2d_tmp,    rden_d2t_tmp;
 reg       wren_t2d_tmp,    wren_d2t_tmp;
  
-reg [31:0] adr_t2d, adr_t2d_next; 
-reg [31:0] adr_d2t, adr_d2t_next;  
+reg [HEADER_SIZE - 1:0] header_t2d; 
+reg [HEADER_SIZE - 1:0] header_d2t;  
+reg [DATA_WIDTH - HEADER_SIZE - 1:0] payload_t2d;
+reg [DATA_WIDTH - HEADER_SIZE - 1:0] payload_d2t;
 
 assign wrclk_t2d = clk_m2s; 
 assign rdclk_t2d = clk_lsi;
@@ -140,7 +147,10 @@ assign di_d2t    = di_d2t_tmp;
 assign rden_d2t  = rden_d2t_tmp;
 assign wren_d2t  = wren_d2t_tmp;
 
-
+assign header_t2d  = do_t2d[DATA_WIDTH - 1: DATA_WIDTH - HEADER_SIZE];
+assign header_d2t  = do_d2t[DATA_WIDTH - 1: DATA_WIDTH - HEADER_SIZE];
+assign payload_t2d = do_t2d[DATA_WIDTH - HEADER_SIZE - 1:0];
+assign payload_d2t = do_d2t[DATA_WIDTH - HEADER_SIZE - 1:0];
 
 FIFO_DUALCLOCK_MACRO  #(
   .ALMOST_EMPTY_OFFSET(ALMOST_OFFSET),               // Sets the almost empty threshold
@@ -186,31 +196,10 @@ begin
     if (rst_m2s)               
         begin
             s <= IDLE;
-            iwdg_kr  <= 16'h0000;
-            iwdg_rlr <= 12'hfff;
-            iwdg_pr  <= 3'b000;
-            iwdg_st  <= 2'b00;
-            
-            adr_t2d  <= 0;            
         end
     else 
         begin
             s <= ss_next;
-            iwdg_kr  <= iwdg_kr_next;
-            //iwdg_rlr <= cnt_rlr;                
-            
-            iwdg_rlr <= iwdg_rlr_next;
-            iwdg_pr  <= iwdg_pr_next;
-            iwdg_st  <= iwdg_st_next;
-            adr_t2d  <= adr_t2d_next;
-            //iwdg_st[0]  <= sts_pr;
-            //iwdg_st[1]  <= sts_rlr;
-            /*
-            if(!empty_dtu)
-                begin
-                    iwdg_rlr <= do_dtu[0];
-                    
-                end*/
         end
 end
                                                     // LOWER FSA MOORE: Sequential part
@@ -224,8 +213,7 @@ begin
             thr_pr   <= PR_DIV_4;
             sts_rlr  <= 0;
             sts_pr   <= 0;
-            
-            adr_d2t  <= 0;            
+                        
         end
     else
         begin
@@ -236,7 +224,6 @@ begin
             sts_rlr  <= sts_rlr_next;
             sts_pr   <= sts_pr_next;
         
-            adr_d2t  <= adr_d2t_next;
         end
 end
 
@@ -244,16 +231,10 @@ end
 always @(*)
 begin
     ss_next = s;
-    iwdg_kr_next  = iwdg_kr;
-    
-    iwdg_rlr_next = iwdg_rlr;
-    //iwdg_rlr_next = cnt_rlr_next;   //iwdg_rlr
-    iwdg_pr_next  = iwdg_pr;   
-    iwdg_st_next  = iwdg_st;
+
     ack_s2m = 0;
     dat_s2m = 0;    
     
-    adr_t2d_next = adr_t2d;
     wren_t2d_tmp = 0;
     rden_d2t_tmp = 0;  
       
@@ -270,34 +251,19 @@ begin
                 ss_next = IDLE;
                 ack_s2m = cyc_m2s & stb_m2s;
                 
-                // {2'boo, iwfg_}
-                case(adr_m2s)
-                    IWDG_KR_ADR:    dat_s2m = 16'h0000 + iwdg_kr_next;
-                    IWDG_PR_ADR:    dat_s2m = 16'h0000 + iwdg_pr_next;  
-                    IWDG_RLR_ADR:   dat_s2m = 16'h0000 + iwdg_rlr_next; 
-                    IWDG_ST_ADR:    dat_s2m = 16'h0000 + iwdg_st_next;
-                endcase
             end 
         WRITE:
             begin
                 ss_next = IDLE;
                 ack_s2m = cyc_m2s & stb_m2s;
-                        
-                case(adr_m2s)
-                    IWDG_KR_ADR:    iwdg_kr_next  = dat_m2s[IWDG_KR_SIZE - 1:0];
-                    IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s[IWDG_PR_SIZE - 1:0];  
-                    IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s[IWDG_RLR_SIZE - 1:0]; 
-                    IWDG_ST_ADR:    iwdg_st_next  = dat_m2s[IWDG_ST_SIZE - 1:0];
-                endcase    
+                wren_t2d_tmp = 1;
                 
-               // if(empty_t2d)
-               //     begin
-                        di_t2d_tmp = dat_m2s[IWDG_KR_SIZE - 1:0];
-                        wren_t2d_tmp = 1;
-                        adr_t2d_next = adr_m2s;    
-               //     end     
-                //else
-                  //  ss_next = WRITE;
+                case (adr_m2s)
+                IWDG_KR_ADR:    di_t2d_tmp = {KR_HEADER,  dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
+                IWDG_RLR_ADR:   di_t2d_tmp = {RLR_HEADER, dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
+                IWDG_PR_ADR:    di_t2d_tmp = {PR_HEADER,  dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
+                IWDG_ST_ADR:    di_t2d_tmp = {ST_HEADER,  dat_m2s[DATA_WIDTH - HEADER_SIZE - 1:0]};
+                endcase;    
             end       
     endcase
 end
@@ -315,18 +281,44 @@ begin
     
     rden_t2d_tmp = 0;
     wren_d2t_tmp = 0;
-    adr_d2t = adr_d2t_next;
     
     if(!empty_t2d)
         begin
             rden_t2d_tmp = 1;
             
-            case (adr_t2d)
-                IWDG_KR_ADR:    tt_next  = do_t2d [IWDG_KR_SIZE - 1:0];
-               // IWDG_PR_ADR:    iwdg_pr_next  = dat_m2s[IWDG_PR_SIZE - 1:0];  
-               // IWDG_RLR_ADR:   iwdg_rlr_next = dat_m2s[IWDG_RLR_SIZE - 1:0]; 
-               // IWDG_ST_ADR:    iwdg_st_next  = dat_m2s[IWDG_ST_SIZE - 1:0];
-            endcase;            
+            case (header_t2d)
+                KR_HEADER:  tt_next  = payload_t2d;
+                PR_HEADER:    
+                    begin
+                        if(tt_next == ACCESS_KEY)
+                            begin
+                                case (payload_t2d [IWDG_PR_SIZE - 1:0])
+                                    PR_0: thr_pr_next = PR_DIV_4;
+                                    PR_1: thr_pr_next = PR_DIV_8;
+                                    PR_2: thr_pr_next = PR_DIV_16;
+                                    PR_3: thr_pr_next = PR_DIV_32;
+                                    PR_4: thr_pr_next = PR_DIV_64;
+                                    PR_5: thr_pr_next = PR_DIV_128;
+                                    PR_6: thr_pr_next = PR_DIV_256;
+                                endcase   
+                            
+                                cnt_pr_next = {thr_pr_next, PR_DIV_2};
+                                sts_pr_next = 1;
+                            end 
+                    end
+                    
+                RLR_HEADER:   
+                    begin
+                        if(tt_next == ACCESS_KEY)
+                                cnt_rlr_next = payload_t2d[IWDG_RLR_SIZE - 1:0];
+                    end     
+                
+                ST_HEADER:
+                    begin
+                        sts_pr_next  = payload_t2d[0];
+                        sts_rlr_next = payload_t2d[1];
+                    end
+            endcase            
         end
     
         
@@ -354,21 +346,7 @@ begin
                 cnt_rlr_next = 12'hFFF;
                 sts_rlr_next = 1;            
             end
-        ACCESS_KEY:
-            begin
-                cnt_pr_next = {thr_pr, PR_DIV_2};
-                //cnt_rlr_next = iwdg_rlr_next;
-                sts_pr_next = 1;
-                case (iwdg_pr_next)
-                    PR_0: thr_pr_next = PR_DIV_4;
-                    PR_1: thr_pr_next = PR_DIV_8;
-                    PR_2: thr_pr_next = PR_DIV_16;
-                    PR_3: thr_pr_next = PR_DIV_32;
-                    PR_4: thr_pr_next = PR_DIV_64;
-                    PR_5: thr_pr_next = PR_DIV_128;
-                    PR_6: thr_pr_next = PR_DIV_256;
-                endcase
-            end      
+        ACCESS_KEY:;      
     endcase
 end
 

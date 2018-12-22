@@ -22,9 +22,9 @@ parameter IWDG_ST_ADR  = BASE_ADR + 32'h0000_000C
 
 // TO:DO synch dual clock
 
-reg clk_lsi;
-reg clk_m2s; 
-reg rst_m2s;       
+reg iwdg_clk;
+reg clk; 
+reg rst;       
 
 reg [IWDG_KR_SIZE - 1:0] dat_m2s; 
 reg [31:0] adr_m2s;    
@@ -36,11 +36,199 @@ reg stb_m2s;                // Wishbone interface signal used to qualify other s
 
 reg [IWDG_KR_SIZE - 1:0] dat_s2m;         // Wishbone interface binary array used to pass data to the bus.
 reg ack_s2m;                // Wishbone interface signal used by the SLAVE to acknoledge a MASTER request. 
-reg rst_iwdg;               // IWDG reset signal
+reg iwdg_rst;               // IWDG reset signal
 
 
-always #(CLK_PERIOD / 2) clk_m2s = ~clk_m2s;                    // clock generation
-always #(CLK_LSI_PERIOD / 2) clk_lsi = ~clk_lsi;                // clock generation
+always #(CLK_PERIOD / 2) clk = ~clk;                    // clock generation
+always #(CLK_LSI_PERIOD / 2) iwdg_clk = ~iwdg_clk;                // clock generation
+
+
+initial begin
+    clk <= 0;
+    iwdg_clk <= 0; 
+    rst = 1;    
+            
+    cyc_m2s = 0;        
+    stb_m2s = 0;    
+                    
+    repeat(10) @(posedge clk);
+    rst <= 0;         
+     
+     // READ operation
+     @(posedge clk); 
+     adr_m2s <= IWDG_KR_ADR;
+     we_m2s  <= 0;
+     cyc_m2s <= 1;
+     stb_m2s <= 1;
+     
+     while(ack_s2m == 0) begin 
+        @(posedge clk); 
+     end
+     cyc_m2s <= 0;  
+     stb_m2s <= 0;
+     
+     // WRITE operation COUNT_KEY
+     @(posedge clk);
+     
+     adr_m2s <= IWDG_KR_ADR;
+     we_m2s  <= 1;
+     cyc_m2s <= 1;
+     stb_m2s <= 1;
+     dat_m2s <= 16'hCCCC;
+           
+     while(ack_s2m == 0) begin 
+        @(posedge clk); 
+     end   
+     cyc_m2s <= 0;  
+     stb_m2s <= 0;
+
+     // WRITE operation RELOAD_KEY
+     @(posedge clk);
+    
+     adr_m2s <= IWDG_KR_ADR;
+     we_m2s  <= 1;
+     cyc_m2s <= 1;
+     stb_m2s <= 1;
+     dat_m2s <= 16'hAAAA;
+       
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end   
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+
+    // Pause
+    repeat(2) @(posedge clk);
+    
+    
+    // WRITE operation COUNT_KEY
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_KR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 16'hCCCC;
+       
+    
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end
+      
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+    
+    // Pause
+    repeat(2) @(posedge clk);
+    
+    
+    // WRITE operation  ACCESS_KEY
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_KR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 16'h5555;
+       
+    
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+    
+    // WRITE operation RLR register
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_RLR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 12'h001;
+      
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end
+       
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;       
+    
+    // WRITE operation PR register
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_PR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 3'b001;
+      
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end
+       
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;        
+
+    // WRITE operation COUNT_KEY
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_KR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 16'hCCCC;
+    
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end   
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+
+     // READ operation
+    @(posedge clk); 
+    adr_m2s <= IWDG_ST_ADR;
+    we_m2s  <= 0;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+   
+    
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end        
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+    
+    // READ operation
+    @(posedge clk); 
+    adr_m2s <= IWDG_PR_ADR;
+    we_m2s  <= 0;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    
+    
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+
+    // READ operation
+    @(posedge clk); 
+    adr_m2s <= IWDG_KR_ADR;
+    we_m2s  <= 0;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+   
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+    
+
+#END_TEST $finish;
+end
 
 IWDG                                                            // IWDG instance
  #(
@@ -57,9 +245,9 @@ IWDG                                                            // IWDG instance
     .IWDG_ST_ADR(IWDG_ST_ADR)  
 
 ) IWDG (
-    .clk_lsi(clk_lsi),
-    .clk_m2s(clk_m2s), 
-    .rst_m2s(rst_m2s), 
+    .iwdg_clk(iwdg_clk),
+    .clk(clk), 
+    .rst(rst), 
     
     .dat_m2s(dat_m2s), 
     .adr_m2s(adr_m2s), 
@@ -71,190 +259,8 @@ IWDG                                                            // IWDG instance
         
     .dat_s2m(dat_s2m), 
     .ack_s2m(ack_s2m), 
-    .rst_iwdg(rst_iwdg)
+    .iwdg_rst(iwdg_rst)
     
 );
 
-initial
-    begin
-        clk_m2s <= 0;
-        clk_lsi <= 0; 
-        rst_m2s = 1;    
-                
-        cyc_m2s = 0;        
-        stb_m2s = 0;    
-                        
-        repeat(10) @(posedge clk_m2s);
-        rst_m2s <= 0;         
-         
-         // READ operation
-         @(posedge clk_m2s); 
-         adr_m2s <= IWDG_KR_ADR;
-         we_m2s  <= 0;
-         cyc_m2s <= 1;
-         stb_m2s <= 1;
-       
-        fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join        
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-         
-         // WRITE operation COUNT_KEY
-         @(posedge clk_m2s);
-         
-         adr_m2s <= IWDG_KR_ADR;
-         we_m2s  <= 1;
-         cyc_m2s <= 1;
-         stb_m2s <= 1;
-         dat_m2s <= 16'hCCCC;
-               
-        fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-    
-        // WRITE operation RELOAD_KEY
-        @(posedge clk_m2s);
-        
-        adr_m2s <= IWDG_KR_ADR;
-        we_m2s  <= 1;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        dat_m2s <= 16'hAAAA;
-           
-        fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
- 
-        // Pause
-        repeat(2) @(posedge clk_m2s);
-        rst_m2s <= 0;         
-        
-        
-        // WRITE operation COUNT_KEY
-        @(posedge clk_m2s);
-        
-        adr_m2s <= IWDG_KR_ADR;
-        we_m2s  <= 1;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        dat_m2s <= 16'hCCCC;
-           
-        fork
-        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-        
-        // Pause
-        repeat(2) @(posedge clk_m2s);
-        rst_m2s <= 0;         
-        
-        
-        // WRITE operation  ACCESS_KEY
-        @(posedge clk_m2s);
-        
-        adr_m2s <= IWDG_KR_ADR;
-        we_m2s  <= 1;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        dat_m2s <= 16'h5555;
-           
-        fork
-        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-        
-        // WRITE operation RLR register
-        @(posedge clk_m2s);
-        
-        adr_m2s <= IWDG_RLR_ADR;
-        we_m2s  <= 1;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        dat_m2s <= 12'h001;
-           
-        fork
-        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;       
-        
-        // WRITE operation PR register
-        @(posedge clk_m2s);
-        
-        adr_m2s <= IWDG_PR_ADR;
-        we_m2s  <= 1;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        dat_m2s <= 3'b001;
-           
-        fork
-        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;        
- 
-        // WRITE operation COUNT_KEY
-        @(posedge clk_m2s);
-        
-        adr_m2s <= IWDG_KR_ADR;
-        we_m2s  <= 1;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        dat_m2s <= 16'hCCCC;
-        
-        fork
-        while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join   
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-
-         // READ operation
-         @(posedge clk_m2s); 
-         adr_m2s <= IWDG_ST_ADR;
-         we_m2s  <= 0;
-         cyc_m2s <= 1;
-         stb_m2s <= 1;
-       
-        fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join        
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-        
-        // READ operation
-        @(posedge clk_m2s); 
-        adr_m2s <= IWDG_PR_ADR;
-        we_m2s  <= 0;
-        cyc_m2s <= 1;
-        stb_m2s <= 1;
-        
-        fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join        
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-
-        // READ operation
-         @(posedge clk_m2s); 
-         adr_m2s <= IWDG_KR_ADR;
-         we_m2s  <= 0;
-         cyc_m2s <= 1;
-         stb_m2s <= 1;
-       
-        fork
-            while(ack_s2m == 0) begin @(posedge clk_m2s); end;
-        join        
-        cyc_m2s <= 0;  
-        stb_m2s <= 0;
-        
-
-    #END_TEST $finish;
-    end
 endmodule

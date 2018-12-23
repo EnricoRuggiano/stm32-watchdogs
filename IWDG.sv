@@ -74,7 +74,7 @@ module IWDG
 localparam IDLE  = 2'b00;   
 localparam READ  = 2'b01;   
 localparam WRITE = 2'b10;   
-
+localparam SLEEP = 2'b11; 
 // - Key Register possible values.
 
 localparam IDLE_KEY   = 16'h0000;
@@ -206,10 +206,10 @@ localparam PAYLOAD_END    = PAYLOAD_SIZE - 1;
 // WRERR: 1-bit output write error.
 // DI: Input data, width defined by DATA_WIDTH parameter.
 // RDRCLK: 1-bit input read clock.
-// RDEN: 1-bit input read enable.
+// RDEN: 1-bit input read enable. Assert this to read data in DO,
 // RST: 1-bit input reset.
 // WRCLK: 1-bit input write clock.
-// WREN: 1-bit input write enable
+// WREN: 1-bit input write enable. Assert this to write data in DI,
 
 wire [DATA_WIDTH - 1:0] f_do_t2d, f_do_d2t; 
 wire [DATA_WIDTH - 1:0] f_di_t2d, f_di_d2t;
@@ -249,7 +249,10 @@ reg [1:0] w_state, w_state_next;
 // 
 // iwdg_kr: Key Register value.
 // 
-// iwdg_rlr: Reload register value. The watchdog timer is
+// iwdg_rlr: Reload register value. The watchdog start value of the timer is
+//  stored in this register.
+//
+// iwdg_rlr_cnt: Reload counter register. The watchdog downcounter timer is
 //  stored in this register. e.g if it is 0 is asserted the reset
 //  signal.
 //
@@ -268,6 +271,7 @@ reg [1:0] w_state, w_state_next;
                                               
 reg [IWDG_KR_SIZE - 1:0] iwdg_kr, iwdg_kr_next;
 reg [IWDG_RLR_SIZE- 1:0] iwdg_rlr, iwdg_rlr_next;
+reg [IWDG_RLR_SIZE- 1:0] iwdg_rlr_cnt, iwdg_rlr_cnt_next;
 reg [7:0] iwdg_pr_cnt, iwdg_pr_cnt_next;           
 reg [5:0] iwdg_pr_thr, iwdg_pr_thr_next;       
 
@@ -279,7 +283,6 @@ reg iwdg_rlr_sts;
 reg [DATA_WIDTH - 1:0]  f_di_t2d_tmp,  f_di_d2t_tmp;
 reg       f_rden_t2d_tmp,    f_rden_d2t_tmp;
 reg       f_wren_t2d_tmp,    f_wren_d2t_tmp;
-
 
  
 always @(posedge clk) begin
@@ -294,7 +297,8 @@ end
 always @(posedge iwdg_clk) begin    
     if (rst) begin
         iwdg_kr      <= IDLE_KEY;       
-        iwdg_rlr     <= 12'h001; //12'hFFF
+        iwdg_rlr     <= 12'hFFF;
+        iwdg_rlr_cnt <= 12'hFFF;
         iwdg_pr_cnt  <= {PR_DIV_4, PR_DIV_2};
         iwdg_pr_thr  <= PR_DIV_4;
                         
@@ -302,6 +306,7 @@ always @(posedge iwdg_clk) begin
     else begin
         iwdg_kr      <= iwdg_kr_next;          
         iwdg_rlr     <= iwdg_rlr_next;
+        iwdg_rlr_cnt <= iwdg_rlr_cnt_next;
         iwdg_pr_cnt  <= iwdg_pr_cnt_next;
         iwdg_pr_thr  <= iwdg_pr_thr_next;
     end
@@ -315,12 +320,7 @@ always @(*) begin
     f_rden_d2t_tmp = 0;
     f_wren_t2d_tmp = 0;  
     f_di_t2d_tmp   = 0;
-    
-    if(!f_empty_d2t) begin
-        f_rden_d2t_tmp = 1;
-        dat_s2m = 0 + f_do_d2t;
-    end
-        
+            
     case (w_state)
         IDLE: begin 
             if(we_m2s == 0 && cyc_m2s == 1) begin 
@@ -330,9 +330,22 @@ always @(*) begin
                 w_state_next = WRITE;
             end
         end
+        SLEEP: begin
+            if(!f_empty_d2t) begin
+                w_state_next = IDLE;
+                f_rden_d2t_tmp = 1;
+                ack_s2m = cyc_m2s & stb_m2s;                            
+                
+                if(we_m2s == 0) begin
+                    dat_s2m = 0 + f_do_d2t;
+                end
+            end
+            else begin
+                w_state_next = SLEEP;
+            end    
+        end
         READ: begin
-            w_state_next = IDLE;
-            ack_s2m = cyc_m2s & stb_m2s;
+            w_state_next = SLEEP;
             f_wren_t2d_tmp = 1;
                 
             case (adr_m2s)
@@ -351,8 +364,7 @@ always @(*) begin
             endcase
         end 
         WRITE: begin
-            w_state_next = IDLE;
-            ack_s2m = cyc_m2s & stb_m2s;
+            w_state_next = SLEEP;
             f_wren_t2d_tmp = 1;
             
             case (adr_m2s)
@@ -376,6 +388,7 @@ end
 always @(*) begin
     iwdg_kr_next = iwdg_kr;    
     iwdg_rlr_next = iwdg_rlr;
+    iwdg_rlr_cnt_next = iwdg_rlr_cnt;
     iwdg_pr_cnt_next = iwdg_pr_cnt;
     iwdg_pr_thr_next = iwdg_pr_thr;
     iwdg_rlr_sts = 0;
@@ -388,12 +401,11 @@ always @(*) begin
     
     if(!f_empty_t2d) begin
         f_rden_t2d_tmp = 1;
-            
+        f_wren_d2t_tmp = 1;
+        
         case (p_opr_header_t2d)
             
             OPR_RD_HEADER: begin
-                f_wren_d2t_tmp = 1;
-    
                 case(p_adr_header_t2d)
                     ADR_KR_HEADER: begin
                         f_di_d2t_tmp = 0 + iwdg_kr;
@@ -410,7 +422,7 @@ always @(*) begin
                         endcase
                     end
                     ADR_RLR_HEADER: begin
-                        f_di_d2t_tmp = 0 + iwdg_rlr_next;
+                        f_di_d2t_tmp = 0 + iwdg_rlr_cnt_next;
                     end
                     ADR_ST_HEADER: begin
                         f_di_d2t_tmp = 0 + {iwdg_rlr_sts, iwdg_pr_sts};
@@ -418,7 +430,9 @@ always @(*) begin
                 endcase
             end              
             
-            OPR_WR_HEADER:
+            OPR_WR_HEADER: begin
+                f_di_d2t_tmp = 1;
+    
                 case (p_adr_header_t2d)
                     ADR_KR_HEADER: begin
                       iwdg_kr_next = p_payload_t2d;
@@ -449,19 +463,20 @@ always @(*) begin
                         iwdg_rlr_sts = p_payload_t2d[1];
                     end
                 endcase
+            end
         endcase            
     end    
     
     case (iwdg_kr)
         COUNT_KEY: begin
             if(iwdg_pr_cnt_next == 0) begin
-                if(iwdg_rlr_next == 0) begin
-                    iwdg_rlr_next = 12'hFFF;
+                if(iwdg_rlr_cnt_next == 0) begin
+                    iwdg_rlr_cnt_next = iwdg_rlr;
                     iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
                     iwdg_rst = 1; 
                 end
                 else begin
-                    iwdg_rlr_next = iwdg_rlr - 1;
+                    iwdg_rlr_cnt_next = iwdg_rlr_cnt - 1;
                     iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
                 end
             end
@@ -471,7 +486,7 @@ always @(*) begin
         end
         RELOAD_KEY: begin
                 iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
-                iwdg_rlr_next = 12'hFFF;
+                iwdg_rlr_cnt_next = iwdg_rlr;
                 iwdg_rlr_sts = 1;            
         end     
     endcase

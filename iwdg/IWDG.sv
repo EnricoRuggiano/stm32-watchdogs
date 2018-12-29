@@ -471,8 +471,11 @@ always @(*) begin
         COUNT_KEY: begin
             if(iwdg_pr_cnt_next == 0) begin
                 if(iwdg_rlr_cnt_next == 0) begin
-                    iwdg_rlr_cnt_next = iwdg_rlr;
-                    iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
+//                    iwdg_rlr_cnt_next = iwdg_rlr;
+//                    iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
+                    iwdg_rlr_cnt_next = 0;
+                    iwdg_pr_cnt_next = 0;
+
                     iwdg_rst = 1; 
                 end
                 else begin

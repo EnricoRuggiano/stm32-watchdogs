@@ -71,6 +71,16 @@
  *  read the value stored in the reaload counter register.
  * R. dat_s2m value must be equal to the value of iwdg_rlr_cnt.
  *
+ * 15. WRITE - IWDG Key Register with `hAAAA`.
+ *  write the value `hAAAA` on the key register.
+ * R. iwdg_kr must be updated with the value of dat_m2s and iwdg_rlr_cnt must be
+ * reloaded.
+ *
+ * 16. WRITE - IWDG Key Register with `hCCCC`.
+ *  write the value `hCCCC` on the key register.
+ * R. iwdg_kr must be updated with the value of dat_m2s and contdown is
+ * started.
+
  */
 
 `timescale 1ns / 100ps
@@ -317,6 +327,36 @@ initial begin
     while(ack_s2m == 0) begin 
         @(posedge clk); 
     end
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+
+    // WRITE operation RELOAD_KEY
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_KR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 16'hAAAA;
+       
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end   
+    cyc_m2s <= 0;  
+    stb_m2s <= 0;
+
+    // WRITE operation COUNT_KEY
+    @(posedge clk);
+    
+    adr_m2s <= IWDG_KR_ADR;
+    we_m2s  <= 1;
+    cyc_m2s <= 1;
+    stb_m2s <= 1;
+    dat_m2s <= 16'hCCCC;
+    
+    while(ack_s2m == 0) begin 
+        @(posedge clk); 
+    end   
     cyc_m2s <= 0;  
     stb_m2s <= 0;
 

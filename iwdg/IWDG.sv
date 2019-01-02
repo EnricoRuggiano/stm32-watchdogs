@@ -15,7 +15,7 @@ module IWDG
  //  Parameters.
  //  
  // IWDG_KR_SIZE: Key Register bit size.
- // IWDG_PR_SIZE: Prescale Register bir size.
+ // IWDG_PR_SIZE: Prescale Register bit size.
  // IWDG_RLR_SIZE: Reload Register bit size.
  // IWDG_ST_SIZE: Status Register bit size. 
  // 
@@ -75,6 +75,7 @@ localparam IDLE  = 2'b00;
 localparam READ  = 2'b01;   
 localparam WRITE = 2'b10;   
 localparam SLEEP = 2'b11; 
+
 // - Key Register possible values.
 
 localparam IDLE_KEY   = 16'h0000;
@@ -275,8 +276,8 @@ reg [IWDG_RLR_SIZE- 1:0] iwdg_rlr_cnt, iwdg_rlr_cnt_next;
 reg [7:0] iwdg_pr_cnt, iwdg_pr_cnt_next;           
 reg [5:0] iwdg_pr_thr, iwdg_pr_thr_next;       
 
-reg iwdg_pr_sts;                        
-reg iwdg_rlr_sts;                       
+reg iwdg_pr_sts, iwdg_pr_sts_next;                        
+reg iwdg_rlr_sts, iwdg_rlr_sts_next;                       
 
                                                                               
 // FIFO DUAL CLOCK variables                                                     
@@ -301,7 +302,8 @@ always @(posedge iwdg_clk) begin
         iwdg_rlr_cnt <= 12'hFFF;
         iwdg_pr_cnt  <= {PR_DIV_4, PR_DIV_2};
         iwdg_pr_thr  <= PR_DIV_4;
-                        
+        iwdg_pr_sts  <= 0;
+        iwdg_rlr_sts <= 0;   
     end
     else begin
         iwdg_kr      <= iwdg_kr_next;          
@@ -309,11 +311,27 @@ always @(posedge iwdg_clk) begin
         iwdg_rlr_cnt <= iwdg_rlr_cnt_next;
         iwdg_pr_cnt  <= iwdg_pr_cnt_next;
         iwdg_pr_thr  <= iwdg_pr_thr_next;
+        iwdg_pr_sts  <= iwdg_pr_sts_next;
+        iwdg_rlr_sts <= iwdg_rlr_sts_next;   
     end
 end
 
 always @(*) begin
     w_state_next = w_state;
+    
+    iwdg_kr_next = iwdg_kr;    
+    iwdg_rlr_next = iwdg_rlr;
+    iwdg_rlr_cnt_next = iwdg_rlr_cnt;
+    iwdg_pr_cnt_next = iwdg_pr_cnt;
+    iwdg_pr_thr_next = iwdg_pr_thr;
+    iwdg_rlr_sts_next = iwdg_rlr_sts;
+    iwdg_pr_sts_next = iwdg_pr_sts;
+    iwdg_rst = 0;
+    
+    f_rden_t2d_tmp = 0;
+    f_wren_d2t_tmp = 0;
+    f_di_d2t_tmp   = 0;
+ 
     dat_s2m = 0;
     ack_s2m = 0;    
     
@@ -336,6 +354,9 @@ always @(*) begin
                 f_rden_d2t_tmp = 1;
                 ack_s2m = cyc_m2s & stb_m2s;                            
                 
+                iwdg_rlr_sts_next = 0;
+                iwdg_pr_sts_next = 0;
+               
                 if(we_m2s == 0) begin
                     dat_s2m = 0 + f_do_d2t;
                 end
@@ -383,22 +404,7 @@ always @(*) begin
             endcase    
         end       
     endcase
-end
 
-always @(*) begin
-    iwdg_kr_next = iwdg_kr;    
-    iwdg_rlr_next = iwdg_rlr;
-    iwdg_rlr_cnt_next = iwdg_rlr_cnt;
-    iwdg_pr_cnt_next = iwdg_pr_cnt;
-    iwdg_pr_thr_next = iwdg_pr_thr;
-    iwdg_rlr_sts = 0;
-    iwdg_pr_sts = 0;
-    iwdg_rst = 0;
-    
-    f_rden_t2d_tmp = 0;
-    f_wren_d2t_tmp = 0;
-    f_di_d2t_tmp   = 0;
-    
     if(!f_empty_t2d) begin
         f_rden_t2d_tmp = 1;
         f_wren_d2t_tmp = 1;
@@ -432,11 +438,16 @@ always @(*) begin
             
             OPR_WR_HEADER: begin
                 f_di_d2t_tmp = 1;
-    
+                iwdg_pr_sts_next = 0;
+                iwdg_rlr_sts_next = 0;
+
                 case (p_adr_header_t2d)
                     ADR_KR_HEADER: begin
-                      iwdg_kr_next = p_payload_t2d;
-                    end
+                        iwdg_kr_next = p_payload_t2d;
+                        if(iwdg_kr_next == RELOAD_KEY) begin
+                            iwdg_rlr_sts_next = 1;    
+                        end
+                   end
                     ADR_PR_HEADER: begin
                         if(iwdg_kr_next == ACCESS_KEY) begin
                             case (p_payload_t2d [IWDG_PR_SIZE - 1:0])
@@ -448,19 +459,19 @@ always @(*) begin
                                 PR_5: iwdg_pr_thr_next = PR_DIV_128;
                                 PR_6: iwdg_pr_thr_next = PR_DIV_256;
                             endcase   
-                                
+ 
+                            iwdg_pr_sts_next = 1;                    
                             iwdg_pr_cnt_next = {iwdg_pr_thr_next, PR_DIV_2};
-                            iwdg_pr_sts = 1;
-                        end 
+                       end 
                     end    
                     ADR_RLR_HEADER: begin
                         if(iwdg_kr_next == ACCESS_KEY) begin
                             iwdg_rlr_next = p_payload_t2d[IWDG_RLR_SIZE - 1:0];
                         end
-                    end    
+                   end    
                     ADR_ST_HEADER: begin
-                        iwdg_pr_sts  = p_payload_t2d[0];
-                        iwdg_rlr_sts = p_payload_t2d[1];
+                        iwdg_pr_sts_next  = p_payload_t2d[0];
+                        iwdg_rlr_sts_next = p_payload_t2d[1];                       
                     end
                 endcase
             end
@@ -469,13 +480,11 @@ always @(*) begin
     
     case (iwdg_kr)
         COUNT_KEY: begin
+            iwdg_rst = 0;
             if(iwdg_pr_cnt_next == 0) begin
                 if(iwdg_rlr_cnt_next == 0) begin
-//                    iwdg_rlr_cnt_next = iwdg_rlr;
-//                    iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
                     iwdg_rlr_cnt_next = 0;
                     iwdg_pr_cnt_next = 0;
-
                     iwdg_rst = 1; 
                 end
                 else begin
@@ -488,13 +497,11 @@ always @(*) begin
             end
         end
         RELOAD_KEY: begin
-                iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
-                iwdg_rlr_cnt_next = iwdg_rlr;
-                iwdg_rlr_sts = 1;            
+            iwdg_pr_cnt_next = {iwdg_pr_thr, PR_DIV_2};
+            iwdg_rlr_cnt_next = iwdg_rlr;
         end     
     endcase
 end
-
 
 // Continuos assignments:
 //
